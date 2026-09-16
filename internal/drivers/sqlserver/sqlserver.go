@@ -66,12 +66,16 @@ func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
 	return dbConn, nil
 }
 
-// GetDatabases retorna a lista de bancos de dados disponíveis.
+// GetDatabases retorna a lista de bancos de dados que o usuário tem acesso.
 func (d *Driver) GetDatabases(dbConn *sql.DB) ([]string, error) {
-	log.Printf("[sqlserver] Listando databases...")
+	log.Printf("[sqlserver] Listando databases com acesso...")
 	start := time.Now()
 
-	query := `SELECT name FROM sys.databases WHERE name NOT IN ('master', 'model', 'msdb', 'tempdb') ORDER BY name`
+	// Usar HAS_DBACCESS para verificar acesso real do usuário
+	query := `SELECT name FROM sys.databases 
+		WHERE HAS_DBACCESS(name) = 1 
+		AND name NOT IN ('master', 'model', 'msdb', 'tempdb')
+		ORDER BY name`
 	rows, err := dbConn.Query(query)
 	if err != nil {
 		log.Printf("[sqlserver] ERRO ao listar databases: %v", err)
@@ -92,14 +96,27 @@ func (d *Driver) GetDatabases(dbConn *sql.DB) ([]string, error) {
 	return databases, nil
 }
 
-// GetSchemas retorna os schemas de um banco.
+// GetSchemas retorna os schemas do banco especificado.
 func (d *Driver) GetSchemas(dbConn *sql.DB, database string) ([]string, error) {
-	log.Printf("[sqlserver] Listando schemas...")
-	query := `SELECT name FROM sys.schemas WHERE name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest', 'db_*') ORDER BY name`
+	log.Printf("[sqlserver] Listando schemas do banco %s...", database)
+	start := time.Now()
+
+	// Usar query com USE para trocar contexto do banco
+	// NOTA: Isso não funciona bem com pools de conexão, mas é mais simples
+	// Alternativa: usar sysschemas ou query direta
+	query := fmt.Sprintf(`SELECT DISTINCT s.name 
+		FROM [%s].sys.schemas s
+		INNER JOIN [%s].sys.database_principals dp 
+			ON s.principal_id = dp.principal_id
+		WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest', 'dbo')
+		AND dp.type IN ('S', 'U', 'E')  -- SQL user, Windows user, External user
+		ORDER BY s.name`, database, database)
+	
 	rows, err := dbConn.Query(query)
 	if err != nil {
-		log.Printf("[sqlserver] ERRO ao listar schemas: %v", err)
-		return nil, fmt.Errorf("erro ao listar schemas: %w", err)
+		// Se falhar (ex: sem acesso ao banco), retornar apenas dbo
+		log.Printf("[sqlserver] WARN: Erro ao listar schemas do banco %s, retornando apenas dbo: %v", database, err)
+		return []string{"dbo"}, nil
 	}
 	defer rows.Close()
 
@@ -112,7 +129,19 @@ func (d *Driver) GetSchemas(dbConn *sql.DB, database string) ([]string, error) {
 		schemas = append(schemas, name)
 	}
 
-	log.Printf("[sqlserver] %d schemas encontrados", len(schemas))
+	// Sempre incluir dbo se não estiver na lista
+	hasDbo := false
+	for _, s := range schemas {
+		if s == "dbo" {
+			hasDbo = true
+			break
+		}
+	}
+	if !hasDbo {
+		schemas = append([]string{"dbo"}, schemas...)
+	}
+
+	log.Printf("[sqlserver] %d schemas encontrados em %v", len(schemas), time.Since(start))
 	return schemas, nil
 }
 
