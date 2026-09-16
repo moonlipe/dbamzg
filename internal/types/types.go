@@ -13,16 +13,18 @@ type Project struct {
 
 // ConnectionConfig armazena configurações de conexão com o banco.
 type ConnectionConfig struct {
-	Name      string // Nome da conexão (ex: "Meu PostgreSQL")
-	Type      string // Tipo do banco: "sqlite", "postgres", "mysql", "sqlserver"
-	Host      string // Host do banco (não usado para SQLite)
-	Port      int    // Porta do banco (não usado para SQLite)
-	User      string // Usuário de conexão
-	Password  string // Senha de conexão
-	Database  string // Nome do banco de dados ou caminho do arquivo (SQLite)
-	SSLMode   string // Modo SSL: "disable", "require", "verify-ca", "verify-full"
-	Color     string // Cor para identificação visual (ex: "#FF5733")
-	ProjectID string // ID do projeto ao qual pertence
+	Name         string // Nome da conexão (ex: "Meu PostgreSQL")
+	Type         string // Tipo do banco: "sqlite", "postgres", "mysql", "sqlserver", "oracle", "custom"
+	Host         string // Host do banco (não usado para SQLite)
+	Port         int    // Porta do banco (não usado para SQLite)
+	User         string // Usuário de conexão
+	Password     string // Senha de conexão
+	Database     string // Nome do banco de dados ou caminho do arquivo (SQLite)
+	SSLMode      string // Modo SSL: "disable", "require", "verify-ca", "verify-full"
+	Color        string // Cor para identificação visual (ex: "#FF5733")
+	ProjectID    string // ID do projeto ao qual pertence
+	DriverPath   string // Caminho para driver personalizado (tipo "custom")
+	ExtraOptions string // Opções extras do driver (formato: key1=value1;key2=value2)
 }
 
 // TransactionMode define o modo de transação.

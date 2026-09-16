@@ -14,6 +14,8 @@ const DB_TYPES = [
   { value: 'postgres', label: 'PostgreSQL', icon: '🐘', defaultPort: 5432 },
   { value: 'mysql', label: 'MySQL', icon: '🐬', defaultPort: 3306 },
   { value: 'sqlserver', label: 'SQL Server', icon: '🔷', defaultPort: 1433 },
+  { value: 'oracle', label: 'Oracle', icon: '🔴', defaultPort: 1521 },
+  { value: 'custom', label: 'Personalizado', icon: '🔧', defaultPort: 0 },
 ];
 
 const COLORS = [
@@ -33,6 +35,8 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
     SSLMode: 'disable',
     Color: '#22c55e',
     ProjectID: '',
+    DriverPath: '',
+    ExtraOptions: '',
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -52,6 +56,8 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
         SSLMode: 'disable',
         Color: '#22c55e',
         ProjectID: '',
+        DriverPath: '',
+        ExtraOptions: '',
       });
     }
     setTestResult(null);
@@ -250,6 +256,45 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
                   <option value="verify-ca">Verify CA</option>
                   <option value="verify-full">Verify Full</option>
                 </select>
+              </div>
+            </>
+          )}
+
+          {/* Oracle Wallet */}
+          {config.Type === 'oracle' && (
+            <div className="p-3 bg-app-bg rounded border border-app-border">
+              <p className="text-[10px] text-zinc-500 mb-2">
+                Para Oracle Wallet, deixe Usuario e Senha em branco.
+                O sistema usara o wallet configurado no Oracle Instant Client.
+              </p>
+              <p className="text-[10px] text-zinc-500">
+                TNS_ADMIN deve estar configurado para o diretorio do wallet.
+              </p>
+            </div>
+          )}
+
+          {/* Custom Driver */}
+          {config.Type === 'custom' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Caminho do Driver (.so/.dll)</label>
+                <input
+                  type="text"
+                  value={config.DriverPath}
+                  onChange={(e) => setConfig({ ...config, DriverPath: e.target.value })}
+                  className="w-full h-9 px-3 bg-app-bg border border-app-border rounded text-sm font-mono focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors"
+                  placeholder="/usr/lib/libmariadb.so ou C:\mariadb-connector-odbc.dll"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Driver Name (para sql.Open)</label>
+                <input
+                  type="text"
+                  value={config.ExtraOptions}
+                  onChange={(e) => setConfig({ ...config, ExtraOptions: e.target.value })}
+                  className="w-full h-9 px-3 bg-app-bg border border-app-border rounded text-sm font-mono focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors"
+                  placeholder="mariadb"
+                />
               </div>
             </>
           )}

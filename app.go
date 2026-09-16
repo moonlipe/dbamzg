@@ -7,6 +7,7 @@ import (
 
 	"amzg-db/internal/db"
 	"amzg-db/internal/drivers/mysql"
+	"amzg-db/internal/drivers/oracle"
 	"amzg-db/internal/drivers/postgres"
 	"amzg-db/internal/drivers/sqlite"
 	"amzg-db/internal/drivers/sqlserver"
@@ -48,6 +49,7 @@ func (a *App) startup(ctx context.Context) {
 	a.connMgr.RegisterDriver("postgres", postgres.New())
 	a.connMgr.RegisterDriver("mysql", mysql.New())
 	a.connMgr.RegisterDriver("sqlserver", sqlserver.New())
+	a.connMgr.RegisterDriver("oracle", oracle.New())
 }
 
 // GetSavedConnections retorna todas as conexões salvas

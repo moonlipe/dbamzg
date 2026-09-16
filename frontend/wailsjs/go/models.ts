@@ -106,6 +106,8 @@ export namespace types {
 	    SSLMode: string;
 	    Color: string;
 	    ProjectID: string;
+	    DriverPath: string;
+	    ExtraOptions: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
@@ -123,6 +125,8 @@ export namespace types {
 	        this.SSLMode = source["SSLMode"];
 	        this.Color = source["Color"];
 	        this.ProjectID = source["ProjectID"];
+	        this.DriverPath = source["DriverPath"];
+	        this.ExtraOptions = source["ExtraOptions"];
 	    }
 	}
 	export class Project {
