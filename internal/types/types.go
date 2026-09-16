@@ -3,18 +3,36 @@ package types
 
 import "database/sql"
 
+// Project representa um projeto que contém múltiplas conexões.
+type Project struct {
+	Name        string             // Nome do projeto
+	Description string             // Descrição do projeto
+	Color       string             // Cor para identificação visual
+	Connections []ConnectionConfig // Conexões do projeto
+}
+
 // ConnectionConfig armazena configurações de conexão com o banco.
 type ConnectionConfig struct {
-	Name     string // Nome da conexão (ex: "Meu PostgreSQL")
-	Type     string // Tipo do banco: "sqlite", "postgres", "mysql", "sqlserver", "oracle"
-	Host     string // Host do banco (não usado para SQLite)
-	Port     int    // Porta do banco (não usado para SQLite)
-	User     string // Usuário de conexão
-	Password string // Senha de conexão
-	Database string // Nome do banco de dados ou caminho do arquivo (SQLite)
-	SSLMode  string // Modo SSL: "disable", "require", "verify-ca", "verify-full"
-	Color    string // Cor para identificação visual (ex: "#FF5733")
+	Name      string // Nome da conexão (ex: "Meu PostgreSQL")
+	Type      string // Tipo do banco: "sqlite", "postgres", "mysql", "sqlserver"
+	Host      string // Host do banco (não usado para SQLite)
+	Port      int    // Porta do banco (não usado para SQLite)
+	User      string // Usuário de conexão
+	Password  string // Senha de conexão
+	Database  string // Nome do banco de dados ou caminho do arquivo (SQLite)
+	SSLMode   string // Modo SSL: "disable", "require", "verify-ca", "verify-full"
+	Color     string // Cor para identificação visual (ex: "#FF5733")
+	ProjectID string // ID do projeto ao qual pertence
 }
+
+// TransactionMode define o modo de transação.
+type TransactionMode string
+
+const (
+	Autocommit  TransactionMode = "autocommit"  // Cada query é uma transação separada
+	SmartCommit TransactionMode = "smartcommit" // Commit automático apenas para DML
+	Manual      TransactionMode = "manual"      // Commit/Rollback manual
+)
 
 // Table representa uma tabela do banco de dados.
 type Table struct {

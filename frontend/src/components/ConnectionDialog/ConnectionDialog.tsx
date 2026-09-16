@@ -10,11 +10,10 @@ interface ConnectionDialogProps {
 }
 
 const DB_TYPES = [
-  { value: 'sqlite', label: 'SQLite', icon: '💾' },
-  { value: 'postgres', label: 'PostgreSQL', icon: '🐘' },
-  { value: 'mysql', label: 'MySQL', icon: '🐬' },
-  { value: 'sqlserver', label: 'SQL Server', icon: '🔷' },
-  { value: 'oracle', label: 'Oracle', icon: '🔴' },
+  { value: 'sqlite', label: 'SQLite', icon: '💾', defaultPort: 0 },
+  { value: 'postgres', label: 'PostgreSQL', icon: '🐘', defaultPort: 5432 },
+  { value: 'mysql', label: 'MySQL', icon: '🐬', defaultPort: 3306 },
+  { value: 'sqlserver', label: 'SQL Server', icon: '🔷', defaultPort: 1433 },
 ];
 
 const COLORS = [
@@ -130,7 +129,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
               {DB_TYPES.map((t) => (
                 <button
                   key={t.value}
-                  onClick={() => setConfig({ ...config, Type: t.value })}
+                  onClick={() => setConfig({ ...config, Type: t.value, Port: t.defaultPort })}
                   className={`py-2 px-1 rounded border text-xs flex flex-col items-center gap-1 transition-all ${
                     config.Type === t.value
                       ? 'border-accent-blue bg-accent-blue/10 text-white'

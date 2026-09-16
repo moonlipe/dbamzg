@@ -105,6 +105,7 @@ export namespace types {
 	    Database: string;
 	    SSLMode: string;
 	    Color: string;
+	    ProjectID: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
@@ -121,6 +122,7 @@ export namespace types {
 	        this.Database = source["Database"];
 	        this.SSLMode = source["SSLMode"];
 	        this.Color = source["Color"];
+	        this.ProjectID = source["ProjectID"];
 	    }
 	}
 	export class QueryResult {

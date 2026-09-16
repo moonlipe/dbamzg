@@ -5,7 +5,9 @@ package sqlserver
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"amzg-db/internal/types"
 
@@ -22,9 +24,13 @@ func New() *Driver {
 
 // Connect abre uma conexão com o banco SQL Server.
 func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
+	log.Printf("[sqlserver] Conectando em %s:%d database=%s user=%s", config.Host, config.Port, config.Database, config.User)
+
+	start := time.Now()
+
 	// Constrói a connection string
 	dsn := fmt.Sprintf(
-		"server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=%s",
+		"server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=%s;connection timeout=10; packet size=4096",
 		config.Host,
 		config.User,
 		config.Password,
@@ -33,25 +39,42 @@ func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
 		config.SSLMode,
 	)
 
+	log.Printf("[sqlserver] DSN: server=%s;user id=%s;port=%d;database=%s;encrypt=%s",
+		config.Host, config.User, config.Port, config.Database, config.SSLMode)
+
 	dbConn, err := sql.Open("sqlserver", dsn)
 	if err != nil {
+		log.Printf("[sqlserver] ERRO ao abrir conexao: %v", err)
 		return nil, fmt.Errorf("erro ao abrir SQL Server: %w", err)
 	}
 
+	dbConn.SetMaxOpenConns(5)
+	dbConn.SetMaxIdleConns(2)
+
 	// Testa a conexão
+	log.Printf("[sqlserver] Testando conexao (Ping)...")
 	if err := dbConn.Ping(); err != nil {
+		elapsed := time.Since(start)
+		log.Printf("[sqlserver] ERRO no Ping apos %v: %v", elapsed, err)
 		dbConn.Close()
 		return nil, fmt.Errorf("erro ao conectar no SQL Server: %w", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("[sqlserver] Conexao estabelecida com sucesso em %v", elapsed)
 
 	return dbConn, nil
 }
 
 // GetDatabases retorna a lista de bancos de dados disponíveis.
 func (d *Driver) GetDatabases(dbConn *sql.DB) ([]string, error) {
+	log.Printf("[sqlserver] Listando databases...")
+	start := time.Now()
+
 	query := `SELECT name FROM sys.databases WHERE name NOT IN ('master', 'model', 'msdb', 'tempdb') ORDER BY name`
 	rows, err := dbConn.Query(query)
 	if err != nil {
+		log.Printf("[sqlserver] ERRO ao listar databases: %v", err)
 		return nil, fmt.Errorf("erro ao listar databases: %w", err)
 	}
 	defer rows.Close()
@@ -65,14 +88,17 @@ func (d *Driver) GetDatabases(dbConn *sql.DB) ([]string, error) {
 		databases = append(databases, name)
 	}
 
+	log.Printf("[sqlserver] %d databases encontrados em %v", len(databases), time.Since(start))
 	return databases, nil
 }
 
 // GetSchemas retorna os schemas de um banco.
 func (d *Driver) GetSchemas(dbConn *sql.DB, database string) ([]string, error) {
+	log.Printf("[sqlserver] Listando schemas...")
 	query := `SELECT name FROM sys.schemas WHERE name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest', 'db_*') ORDER BY name`
 	rows, err := dbConn.Query(query)
 	if err != nil {
+		log.Printf("[sqlserver] ERRO ao listar schemas: %v", err)
 		return nil, fmt.Errorf("erro ao listar schemas: %w", err)
 	}
 	defer rows.Close()
@@ -86,6 +112,7 @@ func (d *Driver) GetSchemas(dbConn *sql.DB, database string) ([]string, error) {
 		schemas = append(schemas, name)
 	}
 
+	log.Printf("[sqlserver] %d schemas encontrados", len(schemas))
 	return schemas, nil
 }
 
@@ -95,6 +122,7 @@ func (d *Driver) GetTables(dbConn *sql.DB, schema string) ([]types.Table, error)
 		schema = "dbo"
 	}
 
+	log.Printf("[sqlserver] Listando tabelas do schema %s...", schema)
 	query := `SELECT t.name, ISNULL(ep.value, '') 
 	FROM sys.tables t
 	LEFT JOIN sys.extended_properties ep 
@@ -102,6 +130,7 @@ func (d *Driver) GetTables(dbConn *sql.DB, schema string) ([]types.Table, error)
 	ORDER BY t.name`
 	rows, err := dbConn.Query(query)
 	if err != nil {
+		log.Printf("[sqlserver] ERRO ao listar tabelas: %v", err)
 		return nil, fmt.Errorf("erro ao listar tabelas: %w", err)
 	}
 	defer rows.Close()
@@ -119,6 +148,7 @@ func (d *Driver) GetTables(dbConn *sql.DB, schema string) ([]types.Table, error)
 		})
 	}
 
+	log.Printf("[sqlserver] %d tabelas encontradas", len(tables))
 	return tables, nil
 }
 
@@ -191,7 +221,7 @@ func (d *Driver) GetIndexes(dbConn *sql.DB, table string) ([]types.Index, error)
 
 	rows, err := dbConn.Query(query, table)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao listar índices: %w", err)
+		return nil, fmt.Errorf("erro ao listar indices: %w", err)
 	}
 	defer rows.Close()
 
@@ -260,8 +290,6 @@ func (d *Driver) GetForeignKeys(dbConn *sql.DB, table string) ([]types.ForeignKe
 
 // GetDDL retorna o DDL de uma tabela.
 func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
-	// SQL Server não tem uma função nativa para gerar DDL completo
-	// Retorna um template básico
 	query := `SELECT 'CREATE TABLE ' + QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME) + ' (' + 
 		STRING_AGG(
 			CHAR(10) + '  ' + QUOTENAME(COLUMN_NAME) + ' ' + DATA_TYPE + 
@@ -283,15 +311,30 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 
 // ExecuteQuery executa uma query e retorna os resultados.
 func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult, error) {
+	log.Printf("[sqlserver] Executando query: %s", truncate(query, 200))
+	start := time.Now()
+
 	queryType := strings.TrimSpace(strings.ToUpper(query))
 	isSelect := strings.HasPrefix(queryType, "SELECT") ||
 		strings.HasPrefix(queryType, "WITH") ||
 		strings.HasPrefix(queryType, "EXEC")
 
+	var result *types.QueryResult
+	var err error
+
 	if isSelect {
-		return d.executeQuerySelect(dbConn, query)
+		result, err = d.executeQuerySelect(dbConn, query)
+	} else {
+		result, err = d.executeNonQuery(dbConn, query)
 	}
-	return d.executeNonQuery(dbConn, query)
+
+	if err != nil {
+		log.Printf("[sqlserver] ERRO ao executar query apos %v: %v", time.Since(start), err)
+	} else {
+		log.Printf("[sqlserver] Query executada com sucesso em %v: %s", time.Since(start), result.Message)
+	}
+
+	return result, err
 }
 
 // executeQuerySelect executa queries SELECT.
@@ -352,4 +395,12 @@ func (d *Driver) executeNonQuery(dbConn *sql.DB, query string) (*types.QueryResu
 		RowCount: int(affected),
 		Message:  fmt.Sprintf("%d rows affected", affected),
 	}, nil
+}
+
+// truncate trunca uma string para debug.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

@@ -5,7 +5,9 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"amzg-db/internal/types"
 	_ "modernc.org/sqlite"
@@ -22,22 +24,35 @@ func New() *Driver {
 // Connect abre uma conexão com o banco SQLite.
 // O campo Database do config deve conter o caminho do arquivo .db.
 func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
+	log.Printf("[sqlite] Conectando em %s", config.Database)
+
+	start := time.Now()
+
 	if config.Database == "" {
-		return nil, fmt.Errorf("caminho do arquivo SQLite é obrigatório")
+		return nil, fmt.Errorf("caminho do arquivo SQLite e obrigatorio")
 	}
 
 	// Abre a conexão com WAL mode e busy timeout
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", config.Database)
 	dbConn, err := sql.Open("sqlite", dsn)
 	if err != nil {
+		log.Printf("[sqlite] ERRO ao abrir conexao: %v", err)
 		return nil, fmt.Errorf("erro ao abrir SQLite: %w", err)
 	}
 
+	dbConn.SetMaxOpenConns(1)
+
 	// Testa a conexão
+	log.Printf("[sqlite] Testando conexao (Ping)...")
 	if err := dbConn.Ping(); err != nil {
+		elapsed := time.Since(start)
+		log.Printf("[sqlite] ERRO no Ping apos %v: %v", elapsed, err)
 		dbConn.Close()
 		return nil, fmt.Errorf("erro ao conectar no SQLite: %w", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("[sqlite] Conexao estabelecida com sucesso em %v", elapsed)
 
 	return dbConn, nil
 }

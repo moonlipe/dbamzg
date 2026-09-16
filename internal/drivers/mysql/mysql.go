@@ -5,7 +5,9 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"amzg-db/internal/types"
 
@@ -22,9 +24,13 @@ func New() *Driver {
 
 // Connect abre uma conexão com o banco MySQL.
 func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
+	log.Printf("[mysql] Conectando em %s:%d database=%s user=%s", config.Host, config.Port, config.Database, config.User)
+
+	start := time.Now()
+
 	// Constrói a connection string
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%d)/%s?parseTime=true&tls=%s",
+		"%s:%s@tcp(%s:%d)/%s?parseTime=true&tls=%s&timeout=10s",
 		config.User,
 		config.Password,
 		config.Host,
@@ -33,16 +39,28 @@ func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
 		config.SSLMode,
 	)
 
+	log.Printf("[mysql] DSN: tcp(%s:%d)/%s tls=%s", config.Host, config.Port, config.Database, config.SSLMode)
+
 	dbConn, err := sql.Open("mysql", dsn)
 	if err != nil {
+		log.Printf("[mysql] ERRO ao abrir conexao: %v", err)
 		return nil, fmt.Errorf("erro ao abrir MySQL: %w", err)
 	}
 
+	dbConn.SetMaxOpenConns(5)
+	dbConn.SetMaxIdleConns(2)
+
 	// Testa a conexão
+	log.Printf("[mysql] Testando conexao (Ping)...")
 	if err := dbConn.Ping(); err != nil {
+		elapsed := time.Since(start)
+		log.Printf("[mysql] ERRO no Ping apos %v: %v", elapsed, err)
 		dbConn.Close()
 		return nil, fmt.Errorf("erro ao conectar no MySQL: %w", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("[mysql] Conexao estabelecida com sucesso em %v", elapsed)
 
 	return dbConn, nil
 }

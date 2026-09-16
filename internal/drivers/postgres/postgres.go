@@ -5,7 +5,9 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"amzg-db/internal/types"
 
@@ -22,9 +24,13 @@ func New() *Driver {
 
 // Connect abre uma conexão com o banco PostgreSQL.
 func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
+	log.Printf("[postgres] Conectando em %s:%d database=%s user=%s", config.Host, config.Port, config.Database, config.User)
+
+	start := time.Now()
+
 	// Constrói a connection string
 	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s connect_timeout=10",
 		config.Host,
 		config.Port,
 		config.User,
@@ -33,16 +39,28 @@ func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
 		config.SSLMode,
 	)
 
+	log.Printf("[postgres] DSN: host=%s port=%d dbname=%s sslmode=%s", config.Host, config.Port, config.Database, config.SSLMode)
+
 	dbConn, err := sql.Open("pgx", dsn)
 	if err != nil {
+		log.Printf("[postgres] ERRO ao abrir conexao: %v", err)
 		return nil, fmt.Errorf("erro ao abrir PostgreSQL: %w", err)
 	}
 
+	dbConn.SetMaxOpenConns(5)
+	dbConn.SetMaxIdleConns(2)
+
 	// Testa a conexão
+	log.Printf("[postgres] Testando conexao (Ping)...")
 	if err := dbConn.Ping(); err != nil {
+		elapsed := time.Since(start)
+		log.Printf("[postgres] ERRO no Ping apos %v: %v", elapsed, err)
 		dbConn.Close()
 		return nil, fmt.Errorf("erro ao conectar no PostgreSQL: %w", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("[postgres] Conexao estabelecida com sucesso em %v", elapsed)
 
 	return dbConn, nil
 }

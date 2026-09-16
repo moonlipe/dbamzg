@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"amzg-db/internal/db"
@@ -35,8 +36,12 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// Inicializa connection manager
-	a.connMgr = db.NewConnectionManager()
+	// Inicializa connection manager (com persistência em disco)
+	var err error
+	a.connMgr, err = db.NewConnectionManager()
+	if err != nil {
+		panic(fmt.Sprintf("Erro ao inicializar gerenciador de conexões: %v", err))
+	}
 
 	// Registra drivers
 	a.connMgr.RegisterDriver("sqlite", sqlite.New())
