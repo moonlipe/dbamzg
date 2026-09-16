@@ -215,10 +215,10 @@ function App() {
                 {connections.map((conn) => (
                   <div key={conn.Name} className="group">
                     <div
-                      className={`w-full text-left px-2.5 py-1.5 flex items-center gap-2 transition-colors text-[11px] ${
+                      className={`w-full text-left px-2.5 py-1.5 flex items-center gap-2 transition-colors text-[11px] border-l-2 ${
                         activeConnection === conn.Name
-                          ? 'bg-accent-blue/10 text-white'
-                          : 'hover:bg-app-hover text-zinc-300 hover:text-white'
+                          ? 'bg-accent-blue/10 text-white border-l-accent-blue'
+                          : 'hover:bg-app-hover text-zinc-300 hover:text-white border-l-transparent'
                       }`}
                     >
                       <button
@@ -441,6 +441,34 @@ function App() {
           </div>
         </main>
       </div>
+
+      {/* Status Bar */}
+      <footer className="h-6 bg-app-surface border-t border-app-border flex items-center px-3 text-[10px] shrink-0">
+        {activeConnection ? (
+          <div className="flex items-center gap-2">
+            {(() => {
+              const conn = connections.find((c) => c.Name === activeConnection);
+              return (
+                <>
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: conn?.Color || '#22c55e' }}
+                  />
+                  <span className="text-zinc-300 font-medium">{activeConnection}</span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-500 uppercase">{conn?.Type}</span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-500">{conn?.Host}:{conn?.Port}</span>
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <span className="text-zinc-600">Nenhuma conexao ativa</span>
+        )}
+        <div className="flex-1" />
+        <span className="text-zinc-600">The Amzg DB v0.1.0</span>
+      </footer>
 
       {/* Connection Dialog */}
       <ConnectionDialog
