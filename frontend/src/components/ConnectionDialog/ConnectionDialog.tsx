@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { SaveConnection, TestConnection } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
-import { FileCode2, Database, Waves, LayoutGrid, CircleDot, Settings2 } from 'lucide-react';
+import { Settings2, type LucideIcon } from 'lucide-react';
+import { siSqlite } from 'simple-icons';
+import { siPostgresql } from 'simple-icons';
+import { siMysql } from 'simple-icons';
+import { siMariadb } from 'simple-icons';
 
 interface ConnectionDialogProps {
   isOpen: boolean;
@@ -10,13 +14,30 @@ interface ConnectionDialogProps {
   editConfig?: types.ConnectionConfig;
 }
 
-const DB_TYPES = [
-  { value: 'sqlite', label: 'SQLite', defaultPort: 0, icon: FileCode2 },
-  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, icon: Database },
-  { value: 'mysql', label: 'MySQL', defaultPort: 3306, icon: Waves },
-  { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, icon: LayoutGrid },
-  { value: 'oracle', label: 'Oracle', defaultPort: 1521, icon: CircleDot },
-  { value: 'custom', label: 'Personalizado', defaultPort: 0, icon: Settings2 },
+function SimpleIcon({ path, color }: { path: string; color?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill={color || 'currentColor'}>
+      <path d={path} />
+    </svg>
+  );
+}
+
+interface DbTypeItem {
+  value: string;
+  label: string;
+  defaultPort: number;
+  iconPath?: string;
+  iconColor?: string;
+  iconComponent?: LucideIcon;
+}
+
+const DB_TYPES: DbTypeItem[] = [
+  { value: 'sqlite', label: 'SQLite', defaultPort: 0, iconPath: siSqlite.path, iconColor: siSqlite.hex },
+  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, iconPath: siPostgresql.path, iconColor: siPostgresql.hex },
+  { value: 'mysql', label: 'MySQL', defaultPort: 3306, iconPath: siMysql.path, iconColor: siMysql.hex },
+  { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, iconPath: siMariadb.path, iconColor: '#CC2927' },
+  { value: 'oracle', label: 'Oracle', defaultPort: 1521, iconPath: siMariadb.path, iconColor: '#F80000' },
+  { value: 'custom', label: 'Personalizado', defaultPort: 0, iconComponent: Settings2 },
 ];
 
 const COLORS = [
@@ -135,23 +156,24 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1.5">Tipo de Banco</label>
             <div className="grid grid-cols-5 gap-2">
-              {DB_TYPES.map((t) => {
-                const Icon = t.icon;
-                return (
-                  <button
-                    key={t.value}
-                    onClick={() => setConfig({ ...config, Type: t.value, Port: t.defaultPort })}
-                    className={`py-2 px-1 rounded border text-xs flex flex-col items-center gap-1 transition-all ${
-                      config.Type === t.value
-                        ? 'border-accent-blue bg-accent-blue/10 text-white'
-                        : 'border-app-border bg-app-bg hover:border-zinc-600 text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    <Icon size={16} />
-                    <span>{t.label}</span>
-                  </button>
-                );
-              })}
+              {DB_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setConfig({ ...config, Type: t.value, Port: t.defaultPort })}
+                  className={`py-2 px-1 rounded border text-xs flex flex-col items-center gap-1 transition-all ${
+                    config.Type === t.value
+                      ? 'border-accent-blue bg-accent-blue/10 text-white'
+                      : 'border-app-border bg-app-bg hover:border-zinc-600 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {t.iconComponent ? (
+                    <t.iconComponent size={16} />
+                  ) : t.iconPath ? (
+                    <SimpleIcon path={t.iconPath} color={`#${t.iconColor}`} />
+                  ) : null}
+                  <span>{t.label}</span>
+                </button>
+              ))}
             </div>
           </div>
 
