@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"amzg-db/internal/types"
 )
 
 // Executor executa queries e gerencia transações.
@@ -19,7 +21,7 @@ func NewExecutor(conn *ActiveConnection) *Executor {
 }
 
 // Execute executa uma query e retorna o resultado.
-func (e *Executor) Execute(query string) (*QueryResult, error) {
+func (e *Executor) Execute(query string) (*types.QueryResult, error) {
 	start := time.Now()
 
 	result, err := e.conn.Driver.ExecuteQuery(e.conn.DB, query)
@@ -33,7 +35,7 @@ func (e *Executor) Execute(query string) (*QueryResult, error) {
 
 // ExecuteWithVars executa uma query substituindo variáveis.
 // Variáveis no formato ${nome} ou :nome são substituídas pelos valores do map.
-func (e *Executor) ExecuteWithVars(query string, vars map[string]string) (*QueryResult, error) {
+func (e *Executor) ExecuteWithVars(query string, vars map[string]string) (*types.QueryResult, error) {
 	// Substitui ${nome} por valor
 	for name, value := range vars {
 		query = strings.ReplaceAll(query, "${"+name+"}", value)
@@ -69,22 +71,22 @@ func (si *SchemaInspector) GetSchemas(database string) ([]string, error) {
 }
 
 // GetTables retorna as tabelas de um schema.
-func (si *SchemaInspector) GetTables(schema string) ([]Table, error) {
+func (si *SchemaInspector) GetTables(schema string) ([]types.Table, error) {
 	return si.conn.Driver.GetTables(si.conn.DB, schema)
 }
 
 // GetColumns retorna as colunas de uma tabela.
-func (si *SchemaInspector) GetColumns(table string) ([]Column, error) {
+func (si *SchemaInspector) GetColumns(table string) ([]types.Column, error) {
 	return si.conn.Driver.GetColumns(si.conn.DB, table)
 }
 
 // GetIndexes retorna os índices de uma tabela.
-func (si *SchemaInspector) GetIndexes(table string) ([]Index, error) {
+func (si *SchemaInspector) GetIndexes(table string) ([]types.Index, error) {
 	return si.conn.Driver.GetIndexes(si.conn.DB, table)
 }
 
 // GetForeignKeys retorna as foreign keys de uma tabela.
-func (si *SchemaInspector) GetForeignKeys(table string) ([]ForeignKey, error) {
+func (si *SchemaInspector) GetForeignKeys(table string) ([]types.ForeignKey, error) {
 	return si.conn.Driver.GetForeignKeys(si.conn.DB, table)
 }
 
