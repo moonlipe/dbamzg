@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
 	"amzg-db/internal/db"
@@ -144,14 +146,88 @@ func (a *App) GetColumns(connName, table string) ([]types.Column, error) {
 }
 
 // ExecuteQuery executa uma query
-func (a *App) ExecuteQuery(connName, query string) (*types.QueryResult, error) {
+func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*types.QueryResult, error) {
 	conn, err := a.connMgr.GetConnection(connName)
 	if err != nil {
 		return nil, err
 	}
 
-	executor := db.NewExecutor(conn)
-	return executor.Execute(query)
+	start := time.Now()
+
+	// Se estiver em modo manual e não tiver transação ativa, iniciar uma
+	if transactionMode == "manual" && conn.Tx == nil {
+		tx, err := conn.DB.Begin()
+		if err != nil {
+			return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+		}
+		conn.Tx = tx
+		conn.TxMode = types.Manual
+		log.Printf("[manager] Transação iniciada para modo manual")
+	}
+
+	// Se tiver transação ativa, executar nela
+	var result *types.QueryResult
+	if conn.Tx != nil {
+		// Para queries SELECT, usar a transação
+		trimmed := strings.TrimSpace(strings.ToUpper(query))
+		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
+			rows, err := conn.Tx.Query(query)
+			if err != nil {
+				return nil, err
+			}
+			defer rows.Close()
+
+			columns, err := rows.Columns()
+			if err != nil {
+				return nil, err
+			}
+
+			var data [][]interface{}
+			for rows.Next() {
+				values := make([]interface{}, len(columns))
+				valuePtrs := make([]interface{}, len(columns))
+				for i := range values {
+					valuePtrs[i] = &values[i]
+				}
+				if err := rows.Scan(valuePtrs...); err != nil {
+					return nil, err
+				}
+				for i, v := range values {
+					if b, ok := v.([]byte); ok {
+						values[i] = string(b)
+					}
+				}
+				data = append(data, values)
+			}
+
+			result = &types.QueryResult{
+				Columns:  columns,
+				Rows:     data,
+				RowCount: len(data),
+				Message:  fmt.Sprintf("%d rows returned", len(data)),
+			}
+		} else {
+			// Para DML/DDL, executar na transação
+			res, err := conn.Tx.Exec(query)
+			if err != nil {
+				return nil, err
+			}
+			affected, _ := res.RowsAffected()
+			result = &types.QueryResult{
+				RowCount: int(affected),
+				Message:  fmt.Sprintf("%d rows affected", affected),
+			}
+		}
+	} else {
+		// Executar direto (autocommit ou smartcommit sem mudanças)
+		result, err = conn.Driver.ExecuteQuery(conn.DB, query)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	result.Duration = time.Since(start).Milliseconds()
+	return result, nil
 }
 
 // ExecuteQueryUnlimited executa uma query sem limite de linhas

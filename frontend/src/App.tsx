@@ -11,6 +11,8 @@ import {
   Rollback,
   GetProjects,
   RemoveProject,
+  GetDatabases,
+  GetSchemas,
 } from '../wailsjs/go/main/App';
 import { types } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
@@ -24,12 +26,13 @@ interface Tab {
   id: string;
   title: string;
   query: string;
-  originalQuery: string; // Query sem LIMIT para "Carregar tudo"
+  originalQuery: string;
   result: types.QueryResult | null;
   error: string | null;
   connection: string | null;
   hasChanges: boolean;
   isLoading: boolean;
+  pendingTransactions: number; // Contador de transações pendentes
 }
 
 const ROW_LIMIT = 200; // Limite padrão do backend
@@ -48,6 +51,7 @@ function createTab(connection: string | null = null): Tab {
     connection,
     hasChanges: false,
     isLoading: false,
+    pendingTransactions: 0,
   };
 }
 
@@ -64,6 +68,10 @@ function App() {
   const [transactionMode, setTransactionMode] = useState<TransactionMode>('autocommit');
   const [page, setPage] = useState(1);
   const [showAllRows, setShowAllRows] = useState(false);
+  const [currentDatabase, setCurrentDatabase] = useState<string | null>(null);
+  const [currentSchema, setCurrentSchema] = useState<string | null>(null);
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [schemas, setSchemas] = useState<string[]>([]);
 
   // Refs to avoid stale closures in callbacks
   const tabsRef = useRef(tabs);
@@ -108,6 +116,23 @@ function App() {
       await Connect(config);
       setActiveConnection(config.Name);
       updateTab(activeTabId, { connection: config.Name, error: null });
+
+      // Load databases for the connection
+      try {
+        const dbs = await GetDatabases(config.Name);
+        setDatabases(dbs || []);
+        if (dbs && dbs.length > 0) {
+          setCurrentDatabase(dbs[0]);
+          // Load schemas for first database
+          try {
+            const schs = await GetSchemas(config.Name, dbs[0]);
+            setSchemas(schs || []);
+            if (schs && schs.length > 0) {
+              setCurrentSchema(schs[0]);
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
     } catch (err) {
       updateTab(activeTabId, { error: `Erro ao conectar: ${err}` });
     }
@@ -152,7 +177,7 @@ function App() {
       updateTab(targetId, { error: null, isLoading: true, originalQuery: tab.query });
       setPage(1);
       setShowAllRows(false);
-      const res = await ExecuteQuery(conn, tab.query);
+      const res = await ExecuteQuery(conn, tab.query, transactionMode);
 
       // Detect DML for smartcommit
       const q = tab.query.trim().toUpperCase();
@@ -162,6 +187,9 @@ function App() {
       const patch: Partial<Tab> = { result: res, error: null };
       if (isDML || isDDL) {
         patch.hasChanges = true;
+        if (transactionMode === 'manual') {
+          patch.pendingTransactions = (tab.pendingTransactions || 0) + 1;
+        }
       }
 
       // Auto-commit in autocommit mode or DDL in smartcommit
@@ -239,7 +267,7 @@ function App() {
     if (!activeTab.connection) return;
     try {
       await Commit(activeTab.connection);
-      updateTab(activeTabId, { error: null, hasChanges: false });
+      updateTab(activeTabId, { error: null, hasChanges: false, pendingTransactions: 0 });
     } catch (err) {
       updateTab(activeTabId, { error: `Erro ao fazer commit: ${err}` });
     }
@@ -249,7 +277,7 @@ function App() {
     if (!activeTab.connection) return;
     try {
       await Rollback(activeTab.connection);
-      updateTab(activeTabId, { error: null, hasChanges: false });
+      updateTab(activeTabId, { error: null, hasChanges: false, pendingTransactions: 0 });
     } catch (err) {
       updateTab(activeTabId, { error: `Erro ao fazer rollback: ${err}` });
     }
@@ -544,6 +572,11 @@ function App() {
                         <path d="M20 6L9 17l-5-5" />
                       </svg>
                       Commit
+                      {transactionMode === 'manual' && activeTab.pendingTransactions > 0 && (
+                        <span className="ml-0.5 px-1 py-0.5 bg-accent-green/30 rounded text-[8px]">
+                          {activeTab.pendingTransactions}
+                        </span>
+                      )}
                     </button>
                     <button
                       onClick={() => handleRollback()}
@@ -557,6 +590,37 @@ function App() {
                     </button>
                   </>
                 )}
+              </>
+            )}
+
+            {/* Database/Schema switcher */}
+            {activeTab.connection && databases.length > 0 && (
+              <>
+                <div className="h-3 w-px bg-app-border" />
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={currentDatabase || ''}
+                    onChange={(e) => setCurrentDatabase(e.target.value)}
+                    className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[10px] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
+                    title="Banco de dados ativo"
+                  >
+                    {databases.map((db) => (
+                      <option key={db} value={db}>{db}</option>
+                    ))}
+                  </select>
+                  {schemas.length > 0 && (
+                    <select
+                      value={currentSchema || ''}
+                      onChange={(e) => setCurrentSchema(e.target.value)}
+                      className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[10px] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
+                      title="Schema ativo"
+                    >
+                      {schemas.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </>
             )}
 

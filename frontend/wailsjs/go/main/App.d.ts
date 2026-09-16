@@ -14,7 +14,7 @@ export function Connect(arg1:types.ConnectionConfig):Promise<void>;
 
 export function Disconnect(arg1:string):Promise<void>;
 
-export function ExecuteQuery(arg1:string,arg2:string):Promise<types.QueryResult>;
+export function ExecuteQuery(arg1:string,arg2:string,arg3:string):Promise<types.QueryResult>;
 
 export function ExecuteQueryUnlimited(arg1:string,arg2:string):Promise<types.QueryResult>;
 

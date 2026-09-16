@@ -22,8 +22,8 @@ export function Disconnect(arg1) {
   return window['go']['main']['App']['Disconnect'](arg1);
 }
 
-export function ExecuteQuery(arg1, arg2) {
-  return window['go']['main']['App']['ExecuteQuery'](arg1, arg2);
+export function ExecuteQuery(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExecuteQuery'](arg1, arg2, arg3);
 }
 
 export function ExecuteQueryUnlimited(arg1, arg2) {
