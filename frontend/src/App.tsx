@@ -5,6 +5,7 @@ import {
   Connect,
   Disconnect,
   ExecuteQuery,
+  RemoveConnection,
 } from '../wailsjs/go/main/App';
 import { types } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
@@ -40,6 +41,7 @@ function App() {
   const [tabs, setTabs] = useState<Tab[]>(() => [createTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<types.ConnectionConfig | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -123,6 +125,24 @@ function App() {
     setActiveTabId(newTab.id);
   };
 
+  const handleEditConnection = (conn: types.ConnectionConfig) => {
+    setEditingConfig(conn);
+    setIsDialogOpen(true);
+  };
+
+  const handleDeleteConnection = async (name: string) => {
+    if (!confirm(`Remover conexao "${name}"?`)) return;
+    try {
+      await RemoveConnection(name);
+      if (activeConnection === name) {
+        await handleDisconnect();
+      }
+      loadConnections();
+    } catch (err) {
+      console.error('Erro ao remover conexao:', err);
+    }
+  };
+
   const handleCloseTab = (id: string) => {
     if (tabs.length === 1) return;
     setTabs((prev) => {
@@ -184,20 +204,43 @@ function App() {
               <div className="py-1">
                 {connections.map((conn) => (
                   <div key={conn.Name} className="group">
-                    <button
-                      onClick={() => handleConnect(conn)}
+                    <div
                       className={`w-full text-left px-2.5 py-1.5 flex items-center gap-2 transition-colors text-[11px] ${
                         activeConnection === conn.Name
                           ? 'bg-accent-blue/10 text-white'
                           : 'hover:bg-app-hover text-zinc-300 hover:text-white'
                       }`}
                     >
-                      <div
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: conn.Color || '#22c55e' }}
-                      />
-                      <span className="font-medium truncate">{conn.Name}</span>
-                    </button>
+                      <button
+                        onClick={() => handleConnect(conn)}
+                        className="flex-1 flex items-center gap-2 min-w-0"
+                      >
+                        <div
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: conn.Color || '#22c55e' }}
+                        />
+                        <span className="font-medium truncate">{conn.Name}</span>
+                      </button>
+                      <button
+                        onClick={() => handleEditConnection(conn)}
+                        className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        title="Editar conexao"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteConnection(conn.Name)}
+                        className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        title="Remover conexao"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
 
                     {activeConnection === conn.Name && (
                       <div className="bg-app-bg/30 animate-fade-in">
@@ -392,8 +435,9 @@ function App() {
       {/* Connection Dialog */}
       <ConnectionDialog
         isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
+        onClose={() => { setIsDialogOpen(false); setEditingConfig(null); }}
         onSave={loadConnections}
+        editConfig={editingConfig || undefined}
       />
     </div>
   );
