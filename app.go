@@ -5,7 +5,10 @@ import (
 	"time"
 
 	"amzg-db/internal/db"
+	"amzg-db/internal/drivers/mysql"
+	"amzg-db/internal/drivers/postgres"
 	"amzg-db/internal/drivers/sqlite"
+	"amzg-db/internal/export"
 	"amzg-db/internal/types"
 )
 
@@ -29,6 +32,8 @@ func (a *App) startup(ctx context.Context) {
 
 	// Registra drivers
 	a.connMgr.RegisterDriver("sqlite", sqlite.New())
+	a.connMgr.RegisterDriver("postgres", postgres.New())
+	a.connMgr.RegisterDriver("mysql", mysql.New())
 }
 
 // GetSavedConnections retorna todas as conexões salvas
@@ -117,4 +122,10 @@ func (a *App) ExecuteQuery(connName, query string) (*types.QueryResult, error) {
 
 	result.Duration = time.Since(start).Milliseconds()
 	return result, nil
+}
+
+// ExportData exporta dados para um arquivo
+func (a *App) ExportData(result *types.QueryResult, filename string, format string) error {
+	f := export.Format(format)
+	return export.ExportToFile(result, filename, f)
 }

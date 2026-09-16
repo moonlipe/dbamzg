@@ -8,6 +8,8 @@ export function Disconnect(arg1:string):Promise<void>;
 
 export function ExecuteQuery(arg1:string,arg2:string):Promise<types.QueryResult>;
 
+export function ExportData(arg1:types.QueryResult,arg2:string,arg3:string):Promise<void>;
+
 export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>;
 
 export function GetDatabases(arg1:string):Promise<Array<string>>;
