@@ -26,7 +26,6 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		DisableWindowDrag: false,
 	})
 
 	if err != nil {
