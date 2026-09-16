@@ -1,17 +1,32 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 
 interface SqlEditorProps {
   value: string;
   onChange: (value: string) => void;
+  onExecute?: () => void;
   language?: string;
 }
 
-export default function SqlEditor({ value, onChange, language = 'sql' }: SqlEditorProps) {
+export default function SqlEditor({ value, onChange, onExecute, language = 'sql' }: SqlEditorProps) {
   const editorRef = useRef<any>(null);
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
+
+    // Register Ctrl+Enter / Cmd+Enter keybinding inside Monaco
+    editor.addAction({
+      id: 'execute-query',
+      label: 'Execute Query',
+      keybindings: [
+        2048 | 3, // Ctrl+Enter (Monaco.KeyMod.CtrlCmd | Monaco.KeyCode.Enter)
+      ],
+      run: () => {
+        onExecute?.();
+      },
+    });
+
+    editor.focus();
   };
 
   const handleChange = (newValue: string | undefined) => {
@@ -19,6 +34,14 @@ export default function SqlEditor({ value, onChange, language = 'sql' }: SqlEdit
       onChange(newValue);
     }
   };
+
+  // Sync external value changes
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && editor.getValue() !== value) {
+      editor.setValue(value);
+    }
+  }, [value]);
 
   return (
     <div className="h-full w-full">
@@ -50,6 +73,7 @@ export default function SqlEditor({ value, onChange, language = 'sql' }: SqlEdit
           overviewRulerLanes: 0,
           hideCursorInOverviewRuler: true,
           overviewRulerBorder: false,
+          contextmenu: false,
         }}
       />
     </div>
