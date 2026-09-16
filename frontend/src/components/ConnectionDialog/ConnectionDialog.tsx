@@ -32,6 +32,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
     Database: '',
     SSLMode: 'disable',
     Color: '#22c55e',
+    ProjectID: '',
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -50,6 +51,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
         Database: '',
         SSLMode: 'disable',
         Color: '#22c55e',
+        ProjectID: '',
       });
     }
     setTestResult(null);
