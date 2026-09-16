@@ -10,18 +10,67 @@ interface ConnectionDialogProps {
 }
 
 const DB_TYPES = [
-  { value: 'sqlite', label: 'SQLite', icon: '💾', defaultPort: 0 },
-  { value: 'postgres', label: 'PostgreSQL', icon: '🐘', defaultPort: 5432 },
-  { value: 'mysql', label: 'MySQL', icon: '🐬', defaultPort: 3306 },
-  { value: 'sqlserver', label: 'SQL Server', icon: '🔷', defaultPort: 1433 },
-  { value: 'oracle', label: 'Oracle', icon: '🔴', defaultPort: 1521 },
-  { value: 'custom', label: 'Personalizado', icon: '🔧', defaultPort: 0 },
+  { value: 'sqlite', label: 'SQLite', defaultPort: 0, iconType: 'file' },
+  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, iconType: 'elephant' },
+  { value: 'mysql', label: 'MySQL', defaultPort: 3306, iconType: 'dolphin' },
+  { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, iconType: 'window' },
+  { value: 'oracle', label: 'Oracle', defaultPort: 1521, iconType: 'database' },
+  { value: 'custom', label: 'Personalizado', defaultPort: 0, iconType: 'gear' },
 ];
 
 const COLORS = [
   '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#f97316',
   '#eab308', '#06b6d4', '#8b5cf6', '#f43f5e', '#14b8a6',
 ];
+
+function DbIcon({ type }: { type: string }) {
+  switch (type) {
+    case 'sqlite':
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+        </svg>
+      );
+    case 'postgres':
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <ellipse cx="12" cy="6" rx="8" ry="4" />
+          <path d="M4 6v6c0 2.21 3.58 4 8 4s8-1.79 8-4V6" />
+          <path d="M4 12v6c0 2.21 3.58 4 8 4s8-1.79 8-4v-6" />
+        </svg>
+      );
+    case 'mysql':
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M12 2C6.48 2 2 4.02 2 6.5v11C2 19.98 6.48 22 12 22s10-2.02 10-4.5v-11C22 4.02 17.52 2 12 2z" />
+          <path d="M2 6.5c0 2.48 4.48 4.5 10 4.5s10-2.02 10-4.5" />
+          <path d="M2 12c0 2.48 4.48 4.5 10 4.5s10-2.02 10-4.5" />
+        </svg>
+      );
+    case 'sqlserver':
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+        </svg>
+      );
+    case 'oracle':
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 12h8M12 8v8" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      );
+  }
+}
 
 export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }: ConnectionDialogProps) {
   const [config, setConfig] = useState<types.ConnectionConfig>({
@@ -144,7 +193,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
                       : 'border-app-border bg-app-bg hover:border-zinc-600 text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  <span className="text-base">{t.icon}</span>
+                  <DbIcon type={t.iconType} />
                   <span>{t.label}</span>
                 </button>
               ))}

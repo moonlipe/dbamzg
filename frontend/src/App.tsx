@@ -17,6 +17,8 @@ import ConnectionDialog from './components/ConnectionDialog/ConnectionDialog';
 import ProjectDialog from './components/ProjectDialog/ProjectDialog';
 import SqlEditor from './components/SqlEditor/SqlEditor';
 
+type TransactionMode = 'autocommit' | 'smartcommit' | 'manual';
+
 interface Tab {
   id: string;
   title: string;
@@ -24,7 +26,10 @@ interface Tab {
   result: types.QueryResult | null;
   error: string | null;
   connection: string | null;
+  hasChanges: boolean; // smartcommit: track if DML executed
 }
+
+const ROW_LIMIT = 1000;
 
 let tabCounter = 0;
 
@@ -37,6 +42,7 @@ function createTab(connection: string | null = null): Tab {
     result: null,
     error: null,
     connection,
+    hasChanges: false,
   };
 }
 
@@ -50,6 +56,9 @@ function App() {
   const [editingConfig, setEditingConfig] = useState<types.ConnectionConfig | null>(null);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<types.Project | null>(null);
+  const [transactionMode, setTransactionMode] = useState<TransactionMode>('autocommit');
+  const [page, setPage] = useState(1);
+  const [showAllRows, setShowAllRows] = useState(false);
 
   // Refs to avoid stale closures in callbacks
   const tabsRef = useRef(tabs);
@@ -136,8 +145,26 @@ function App() {
 
     try {
       updateTab(targetId, { error: null });
+      setPage(1);
+      setShowAllRows(false);
       const res = await ExecuteQuery(conn, tab.query);
-      updateTab(targetId, { result: res, error: null });
+
+      // Detect DML for smartcommit
+      const q = tab.query.trim().toUpperCase();
+      const isDML = q.startsWith('INSERT') || q.startsWith('UPDATE') || q.startsWith('DELETE') || q.startsWith('MERGE');
+      const isDDL = q.startsWith('CREATE') || q.startsWith('ALTER') || q.startsWith('DROP');
+
+      const patch: Partial<Tab> = { result: res, error: null };
+      if (isDML || isDDL) {
+        patch.hasChanges = true;
+      }
+
+      // Auto-commit in autocommit mode or DDL in smartcommit
+      if (transactionMode === 'autocommit' || (transactionMode === 'smartcommit' && isDDL)) {
+        try { await Commit(conn); } catch (_) {}
+      }
+
+      updateTab(targetId, patch);
     } catch (err) {
       updateTab(targetId, { result: null, error: `Erro ao executar query: ${err}` });
     }
@@ -186,7 +213,7 @@ function App() {
     if (!activeTab.connection) return;
     try {
       await Commit(activeTab.connection);
-      updateTab(activeTabId, { error: null });
+      updateTab(activeTabId, { error: null, hasChanges: false });
     } catch (err) {
       updateTab(activeTabId, { error: `Erro ao fazer commit: ${err}` });
     }
@@ -196,7 +223,7 @@ function App() {
     if (!activeTab.connection) return;
     try {
       await Rollback(activeTab.connection);
-      updateTab(activeTabId, { error: null });
+      updateTab(activeTabId, { error: null, hasChanges: false });
     } catch (err) {
       updateTab(activeTabId, { error: `Erro ao fazer rollback: ${err}` });
     }
@@ -216,17 +243,17 @@ function App() {
   return (
     <div className="h-screen flex flex-col bg-app-bg text-zinc-100 select-none">
       {/* Header */}
-      <header className="h-9 bg-app-surface border-b border-app-border flex items-center px-3 shrink-0">
+      <header className="h-10 bg-app-surface border-b border-app-border flex items-center px-3 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-accent-blue rounded flex items-center justify-center">
-            <span className="text-white text-[10px] font-bold">A</span>
+          <div className="w-6 h-6 bg-accent-blue rounded flex items-center justify-center">
+            <span className="text-white text-[11px] font-bold">A</span>
           </div>
-          <span className="font-semibold text-xs">The Amzg DB</span>
+          <span className="font-semibold text-sm">The Amzg DB</span>
         </div>
         <div className="flex-1" />
         {activeConnection && (
           <div className="flex items-center gap-2 text-xs">
-            <div className="w-1.5 h-1.5 rounded-full bg-accent-green" />
+            <div className="w-2 h-2 rounded-full bg-accent-green" />
             <span className="text-zinc-400 text-xs">{activeConnection}</span>
           </div>
         )}
@@ -234,8 +261,8 @@ function App() {
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
-        <aside className="w-56 bg-app-surface border-r border-app-border flex flex-col shrink-0">
-          <div className="h-9 px-2 flex items-center justify-between border-b border-app-border">
+        <aside className="w-60 bg-app-surface border-r border-app-border flex flex-col shrink-0">
+          <div className="h-10 px-2 flex items-center justify-between border-b border-app-border">
             <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Database</span>
             <div className="flex items-center gap-1">
               <button
@@ -369,7 +396,7 @@ function App() {
         {/* Main Content */}
         <main className="flex-1 flex flex-col min-w-0 bg-app-bg">
           {/* Tab Bar */}
-          <div className="h-8 bg-app-surface border-b border-app-border flex items-end shrink-0">
+          <div className="h-9 bg-app-surface border-b border-app-border flex items-end shrink-0">
             <div className="flex h-full overflow-x-auto">
               {tabs.map((tab) => {
                 const connLabel = tab.connection
@@ -427,11 +454,11 @@ function App() {
           </div>
 
           {/* Toolbar */}
-          <div className="h-8 px-2 bg-app-surface border-b border-app-border flex items-center gap-2 shrink-0">
+          <div className="h-9 px-2 bg-app-surface border-b border-app-border flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleExecuteQuery()}
               disabled={!activeTab.connection}
-              className="h-6 px-2.5 bg-accent-green hover:bg-accent-green/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-[11px] font-medium text-white flex items-center gap-1 transition-colors"
+              className="h-7 px-3 bg-accent-green hover:bg-accent-green/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-[11px] font-medium text-white flex items-center gap-1 transition-colors"
             >
               <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
                 <path d="M2 1l7 4-7 4V1z" />
@@ -445,28 +472,54 @@ function App() {
             {activeTab.connection && (
               <>
                 <div className="h-3 w-px bg-app-border" />
-                <button
-                  onClick={() => handleCommit()}
-                  disabled={!activeTab.connection}
-                  className="h-6 px-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
-                  title="Commit (Ctrl+Shift+C)"
-                >
-                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  Commit
-                </button>
-                <button
-                  onClick={() => handleRollback()}
-                  disabled={!activeTab.connection}
-                  className="h-6 px-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
-                  title="Rollback (Ctrl+Shift+Z)"
-                >
-                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Rollback
-                </button>
+                {/* Transaction mode toggle */}
+                <div className="flex items-center gap-0.5 bg-app-bg rounded p-0.5 border border-app-border">
+                  {(['autocommit', 'smartcommit', 'manual'] as TransactionMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setTransactionMode(mode)}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${
+                        transactionMode === mode
+                          ? 'bg-accent-blue text-white'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                      title={
+                        mode === 'autocommit' ? 'Autocommit: cada query commita automaticamente' :
+                        mode === 'smartcommit' ? 'SmartCommit: commita antes de DDL e quando precisar' :
+                        'Manual: voce controla commit/rollback'
+                      }
+                    >
+                      {mode === 'autocommit' ? 'Auto' : mode === 'smartcommit' ? 'Smart' : 'Manual'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Commit/Rollback: always visible in manual, visible when needed in smartcommit */}
+                {(transactionMode === 'manual' || (transactionMode === 'smartcommit' && activeTab.hasChanges)) && (
+                  <>
+                    <div className="h-3 w-px bg-app-border" />
+                    <button
+                      onClick={() => handleCommit()}
+                      className="h-6 px-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                      title="Commit (Ctrl+Shift+C)"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                      Commit
+                    </button>
+                    <button
+                      onClick={() => handleRollback()}
+                      className="h-6 px-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                      title="Rollback (Ctrl+Shift+Z)"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                      Rollback
+                    </button>
+                  </>
+                )}
               </>
             )}
 
@@ -479,7 +532,7 @@ function App() {
           </div>
 
           {/* SQL Editor */}
-          <div className="h-44 border-b border-app-border shrink-0">
+          <div className="h-48 border-b border-app-border shrink-0">
             <SqlEditor
               key={activeTab.id}
               value={activeTab.query}
@@ -517,7 +570,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-app-border/30">
-                    {activeTab.result.Rows?.map((row: any[], rowIdx: number) => (
+                    {(showAllRows ? activeTab.result.Rows : activeTab.result.Rows?.slice((page - 1) * ROW_LIMIT, page * ROW_LIMIT))?.map((row: any[], rowIdx: number) => (
                       <tr
                         key={rowIdx}
                         className="hover:bg-app-hover/30 transition-colors"
@@ -538,6 +591,58 @@ function App() {
                     ))}
                   </tbody>
                 </table>
+                {/* Pagination */}
+                {activeTab.result.Rows && activeTab.result.Rows.length > ROW_LIMIT && (
+                  <div className="sticky bottom-0 bg-app-surface border-t border-app-border px-3 py-1.5 flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-500">
+                      {showAllRows ? (
+                        `Mostrando todas as ${activeTab.result.Rows.length} linhas`
+                      ) : (
+                        `Mostrando ${(page - 1) * ROW_LIMIT + 1}-${Math.min(page * ROW_LIMIT, activeTab.result.Rows.length)} de ${activeTab.result.Rows.length}`
+                      )}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {!showAllRows && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Carregar todas as ${activeTab.result?.Rows.length} linhas? Isso pode ser lento.`)) {
+                              setShowAllRows(true);
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-accent-blue/20 hover:bg-accent-blue/30 text-accent-blue rounded transition-colors"
+                        >
+                          Carregar tudo
+                        </button>
+                      )}
+                      {showAllRows ? (
+                        <button
+                          onClick={() => { setShowAllRows(false); setPage(1); }}
+                          className="px-2 py-0.5 bg-app-bg hover:bg-app-elevated text-zinc-400 rounded transition-colors"
+                        >
+                          Paginar
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="px-2 py-0.5 bg-app-bg hover:bg-app-elevated disabled:opacity-40 text-zinc-400 rounded transition-colors"
+                          >
+                            Anterior
+                          </button>
+                          <span className="text-zinc-500">{page}/{Math.ceil(activeTab.result.Rows.length / ROW_LIMIT)}</span>
+                          <button
+                            onClick={() => setPage((p) => Math.min(Math.ceil(activeTab.result!.Rows!.length / ROW_LIMIT), p + 1))}
+                            disabled={page >= Math.ceil(activeTab.result.Rows.length / ROW_LIMIT)}
+                            className="px-2 py-0.5 bg-app-bg hover:bg-app-elevated disabled:opacity-40 text-zinc-400 rounded transition-colors"
+                          >
+                            Proximo
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : activeTab.result ? (
               <div className="p-3 text-center text-zinc-500 text-[11px]">
@@ -560,7 +665,7 @@ function App() {
       </div>
 
       {/* Status Bar */}
-      <footer className="h-6 bg-app-surface border-t border-app-border flex items-center px-3 text-[10px] shrink-0">
+      <footer className="h-7 bg-app-surface border-t border-app-border flex items-center px-3 text-[11px] shrink-0">
         {activeConnection ? (
           <div className="flex items-center gap-2">
             {(() => {

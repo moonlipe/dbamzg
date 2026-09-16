@@ -6,6 +6,7 @@ toolchain go1.26.8
 
 require (
 	github.com/go-sql-driver/mysql v1.8.1
+	github.com/godror/godror v0.40.4
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/microsoft/go-mssqldb v1.8.0
 	github.com/wailsapp/wails/v2 v2.16.0
@@ -20,7 +21,6 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/godror/godror v0.40.4 // indirect
 	github.com/godror/knownpb v0.1.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
