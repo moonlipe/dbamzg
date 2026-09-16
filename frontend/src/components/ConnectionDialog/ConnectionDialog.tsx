@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { SaveConnection, TestConnection } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
-import { Settings2, type LucideIcon } from 'lucide-react';
+import { Settings2, Server, Building2, type LucideIcon } from 'lucide-react';
 import { siSqlite } from 'simple-icons';
 import { siPostgresql } from 'simple-icons';
 import { siMysql } from 'simple-icons';
-import { siMariadb } from 'simple-icons';
 
 interface ConnectionDialogProps {
   isOpen: boolean;
@@ -14,9 +13,9 @@ interface ConnectionDialogProps {
   editConfig?: types.ConnectionConfig;
 }
 
-function SimpleIcon({ path, color }: { path: string; color?: string }) {
+function SimpleIcon({ path, color, size = 20 }: { path: string; color?: string; size?: number }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={color || 'currentColor'}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color || 'currentColor'}>
       <path d={path} />
     </svg>
   );
@@ -35,8 +34,8 @@ const DB_TYPES: DbTypeItem[] = [
   { value: 'sqlite', label: 'SQLite', defaultPort: 0, iconPath: siSqlite.path, iconColor: siSqlite.hex },
   { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, iconPath: siPostgresql.path, iconColor: siPostgresql.hex },
   { value: 'mysql', label: 'MySQL', defaultPort: 3306, iconPath: siMysql.path, iconColor: siMysql.hex },
-  { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, iconPath: siMariadb.path, iconColor: '#CC2927' },
-  { value: 'oracle', label: 'Oracle', defaultPort: 1521, iconPath: siMariadb.path, iconColor: '#F80000' },
+  { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, iconComponent: Server },
+  { value: 'oracle', label: 'Oracle', defaultPort: 1521, iconComponent: Building2 },
   { value: 'custom', label: 'Personalizado', defaultPort: 0, iconComponent: Settings2 },
 ];
 
@@ -155,23 +154,23 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
           {/* Type */}
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1.5">Tipo de Banco</label>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-6 gap-2">
               {DB_TYPES.map((t) => (
                 <button
                   key={t.value}
                   onClick={() => setConfig({ ...config, Type: t.value, Port: t.defaultPort })}
-                  className={`py-2 px-1 rounded border text-xs flex flex-col items-center gap-1 transition-all ${
+                  className={`py-2.5 px-1.5 rounded border text-xs flex flex-col items-center gap-1.5 transition-all ${
                     config.Type === t.value
                       ? 'border-accent-blue bg-accent-blue/10 text-white'
                       : 'border-app-border bg-app-bg hover:border-zinc-600 text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
                   {t.iconComponent ? (
-                    <t.iconComponent size={16} />
+                    <t.iconComponent size={20} />
                   ) : t.iconPath ? (
-                    <SimpleIcon path={t.iconPath} color={`#${t.iconColor}`} />
+                    <SimpleIcon path={t.iconPath} color={`#${t.iconColor}`} size={20} />
                   ) : null}
-                  <span>{t.label}</span>
+                  <span className="text-[10px]">{t.label}</span>
                 </button>
               ))}
             </div>
