@@ -2,9 +2,12 @@ module amzg-db
 
 go 1.25.0
 
+toolchain go1.26.8
+
 require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/jackc/pgx/v5 v5.6.0
+	github.com/microsoft/go-mssqldb v1.8.0
 	github.com/wailsapp/wails/v2 v2.16.0
 	modernc.org/sqlite v1.34.5
 )
@@ -16,6 +19,8 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

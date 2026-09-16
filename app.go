@@ -8,19 +8,27 @@ import (
 	"amzg-db/internal/drivers/mysql"
 	"amzg-db/internal/drivers/postgres"
 	"amzg-db/internal/drivers/sqlite"
+	"amzg-db/internal/drivers/sqlserver"
 	"amzg-db/internal/export"
+	"amzg-db/internal/history"
+	"amzg-db/internal/sqlvariables"
 	"amzg-db/internal/types"
 )
 
 // App struct
 type App struct {
-	ctx     context.Context
-	connMgr *db.ConnectionManager
+	ctx         context.Context
+	connMgr     *db.ConnectionManager
+	history     *history.History
+	variableMgr *sqlvariables.VariableManager
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		history:     history.NewHistory(),
+		variableMgr: sqlvariables.NewVariableManager(),
+	}
 }
 
 // startup is called when the app starts
@@ -34,6 +42,7 @@ func (a *App) startup(ctx context.Context) {
 	a.connMgr.RegisterDriver("sqlite", sqlite.New())
 	a.connMgr.RegisterDriver("postgres", postgres.New())
 	a.connMgr.RegisterDriver("mysql", mysql.New())
+	a.connMgr.RegisterDriver("sqlserver", sqlserver.New())
 }
 
 // GetSavedConnections retorna todas as conexões salvas
@@ -128,4 +137,34 @@ func (a *App) ExecuteQuery(connName, query string) (*types.QueryResult, error) {
 func (a *App) ExportData(result *types.QueryResult, filename string, format string) error {
 	f := export.Format(format)
 	return export.ExportToFile(result, filename, f)
+}
+
+// GetQueryHistory retorna o histórico de queries
+func (a *App) GetQueryHistory() ([]history.QueryEntry, error) {
+	return a.history.GetAll()
+}
+
+// GetQueryHistoryByConnection retorna histórico filtrado por conexão
+func (a *App) GetQueryHistoryByConnection(connection string) ([]history.QueryEntry, error) {
+	return a.history.GetByConnection(connection)
+}
+
+// SearchQueryHistory busca no histórico
+func (a *App) SearchQueryHistory(text string) ([]history.QueryEntry, error) {
+	return a.history.Search(text)
+}
+
+// ClearQueryHistory limpa o histórico
+func (a *App) ClearQueryHistory() error {
+	return a.history.Clear()
+}
+
+// ExtractSQLVariables extrai variáveis de uma query
+func (a *App) ExtractSQLVariables(query string) []sqlvariables.Variable {
+	return a.variableMgr.ExtractVariables(query)
+}
+
+// ReplaceSQLVariables substitui variáveis na query
+func (a *App) ReplaceSQLVariables(query string, values map[string]string) string {
+	return a.variableMgr.ReplaceVariables(query, values)
 }
