@@ -195,12 +195,71 @@ func (cm *ConnectionManager) RemoveConnection(name string) error {
 	return nil
 }
 
-// GetSavedConnections retorna todas as conexões salvas (senhas criptografadas).
+// SaveProject salva um projeto.
+func (cm *ConnectionManager) SaveProject(project types.Project) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Criptografa senhas das conexões do projeto
+	for i := range project.Connections {
+		encryptedPassword, err := crypto.Encrypt(project.Connections[i].Password)
+		if err != nil {
+			return fmt.Errorf("erro ao criptografar senha: %w", err)
+		}
+		project.Connections[i].Password = encryptedPassword
+	}
+
+	if err := cm.configMgr.AddProject(project); err != nil {
+		return fmt.Errorf("erro ao salvar projeto: %w", err)
+	}
+
+	log.Printf("[manager] Projeto '%s' salvo em disco", project.Name)
+	return nil
+}
+
+// RemoveProject remove um projeto.
+func (cm *ConnectionManager) RemoveProject(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := cm.configMgr.RemoveProject(name); err != nil {
+		return fmt.Errorf("erro ao remover projeto: %w", err)
+	}
+
+	log.Printf("[manager] Projeto '%s' removido do disco", name)
+	return nil
+}
+
+// GetProjects retorna todos os projetos.
+func (cm *ConnectionManager) GetProjects() []types.Project {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	return cm.configMgr.ListProjects()
+}
+
+// GetProject retorna um projeto pelo nome.
+func (cm *ConnectionManager) GetProject(name string) (*types.Project, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	return cm.configMgr.GetProject(name)
+}
+
+// GetSavedConnections retorna todas as conexões salvas (avulsas).
 func (cm *ConnectionManager) GetSavedConnections() []types.ConnectionConfig {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
 	return cm.configMgr.ListConnections()
+}
+
+// GetAllConnections retorna todas as conexões (projetos + avulsas).
+func (cm *ConnectionManager) GetAllConnections() []types.ConnectionConfig {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	return cm.configMgr.GetAllConnections()
 }
 
 // DisconnectAll fecha todas as conexões ativas.

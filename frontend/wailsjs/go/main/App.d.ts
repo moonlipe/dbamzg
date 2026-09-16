@@ -24,6 +24,10 @@ export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>
 
 export function GetDatabases(arg1:string):Promise<Array<string>>;
 
+export function GetProject(arg1:string):Promise<types.Project>;
+
+export function GetProjects():Promise<Array<types.Project>>;
+
 export function GetQueryHistory():Promise<Array<history.QueryEntry>>;
 
 export function GetQueryHistoryByConnection(arg1:string):Promise<Array<history.QueryEntry>>;
@@ -38,11 +42,15 @@ export function GetTransactionMode(arg1:string):Promise<string>;
 
 export function RemoveConnection(arg1:string):Promise<void>;
 
+export function RemoveProject(arg1:string):Promise<void>;
+
 export function ReplaceSQLVariables(arg1:string,arg2:Record<string, string>):Promise<string>;
 
 export function Rollback(arg1:string):Promise<void>;
 
 export function SaveConnection(arg1:types.ConnectionConfig):Promise<void>;
+
+export function SaveProject(arg1:types.Project):Promise<void>;
 
 export function SearchQueryHistory(arg1:string):Promise<Array<history.QueryEntry>>;
 

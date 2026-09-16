@@ -8,10 +8,13 @@ import {
   RemoveConnection,
   Commit,
   Rollback,
+  GetProjects,
+  RemoveProject,
 } from '../wailsjs/go/main/App';
 import { types } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
 import ConnectionDialog from './components/ConnectionDialog/ConnectionDialog';
+import ProjectDialog from './components/ProjectDialog/ProjectDialog';
 import SqlEditor from './components/SqlEditor/SqlEditor';
 
 interface Tab {
@@ -39,11 +42,14 @@ function createTab(connection: string | null = null): Tab {
 
 function App() {
   const [connections, setConnections] = useState<types.ConnectionConfig[]>([]);
+  const [projects, setProjects] = useState<types.Project[]>([]);
   const [activeConnection, setActiveConnection] = useState<string | null>(null);
   const [tabs, setTabs] = useState<Tab[]>(() => [createTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<types.ConnectionConfig | null>(null);
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<types.Project | null>(null);
 
   // Refs to avoid stale closures in callbacks
   const tabsRef = useRef(tabs);
@@ -62,6 +68,7 @@ function App() {
 
   useEffect(() => {
     loadConnections();
+    loadProjects();
   }, []);
 
   const loadConnections = async () => {
@@ -70,6 +77,15 @@ function App() {
       setConnections(conns || []);
     } catch (err) {
       console.error('Erro ao carregar conexoes:', err);
+    }
+  };
+
+  const loadProjects = async () => {
+    try {
+      const projs = await GetProjects();
+      setProjects(projs || []);
+    } catch (err) {
+      console.error('Erro ao carregar projetos:', err);
     }
   };
 
@@ -155,6 +171,17 @@ function App() {
     }
   };
 
+  const handleDeleteProject = async (name: string) => {
+    if (!confirm(`Remover projeto "${name}" e todas as suas conexoes?`)) return;
+    try {
+      await RemoveProject(name);
+      loadProjects();
+      loadConnections();
+    } catch (err) {
+      console.error('Erro ao remover projeto:', err);
+    }
+  };
+
   const handleCommit = async () => {
     if (!activeTab.connection) return;
     try {
@@ -210,30 +237,69 @@ function App() {
         <aside className="w-56 bg-app-surface border-r border-app-border flex flex-col shrink-0">
           <div className="h-9 px-2 flex items-center justify-between border-b border-app-border">
             <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Database</span>
-            <button
-              onClick={() => setIsDialogOpen(true)}
-              className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-blue/20 hover:text-accent-blue flex items-center justify-center text-zinc-400 transition-colors"
-              title="Nova Conexao"
-            >
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 1v10M1 6h10" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { setEditingProject(null); setIsProjectDialogOpen(true); }}
+                className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-purple/20 hover:text-accent-purple flex items-center justify-center text-zinc-400 transition-colors"
+                title="Novo Projeto"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setIsDialogOpen(true)}
+                className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-blue/20 hover:text-accent-blue flex items-center justify-center text-zinc-400 transition-colors"
+                title="Nova Conexao"
+              >
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 1v10M1 6h10" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {connections.length === 0 ? (
-              <div className="p-3 text-center">
-                <p className="text-[11px] text-zinc-500">Nenhuma conexao</p>
-                <button
-                  onClick={() => setIsDialogOpen(true)}
-                  className="mt-1 text-[11px] text-accent-blue hover:text-accent-blue/80"
-                >
-                  Criar primeira conexao
-                </button>
-              </div>
-            ) : (
+            {/* Projetos */}
+            {projects.length > 0 && (
               <div className="py-1">
+                {projects.map((project) => (
+                  <div key={project.Name} className="group">
+                    <div className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 text-[11px] hover:bg-app-hover text-zinc-300">
+                      <div
+                        className="w-2.5 h-2.5 rounded shrink-0"
+                        style={{ backgroundColor: project.Color || '#3b82f6' }}
+                      />
+                      <span className="font-medium truncate flex-1">{project.Name}</span>
+                      <button
+                        onClick={() => { setEditingProject(project); setIsProjectDialogOpen(true); }}
+                        className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        title="Editar projeto"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProject(project.Name)}
+                        className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        title="Remover projeto"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Conexoes avulsas */}
+            {connections.length > 0 && (
+              <div className="py-1 border-t border-app-border">
+                <div className="px-2.5 py-1 text-[9px] text-zinc-600 uppercase tracking-wider">Conexoes</div>
                 {connections.map((conn) => (
                   <div key={conn.Name} className="group">
                     <div
@@ -527,6 +593,14 @@ function App() {
         onClose={() => { setIsDialogOpen(false); setEditingConfig(null); }}
         onSave={loadConnections}
         editConfig={editingConfig || undefined}
+      />
+
+      {/* Project Dialog */}
+      <ProjectDialog
+        isOpen={isProjectDialogOpen}
+        onClose={() => { setIsProjectDialogOpen(false); setEditingProject(null); }}
+        onSave={() => { loadProjects(); loadConnections(); }}
+        editProject={editingProject || undefined}
       />
     </div>
   );

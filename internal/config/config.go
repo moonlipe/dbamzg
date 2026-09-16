@@ -1,5 +1,5 @@
 // Package config gerencia a configuração do aplicativo.
-// Salva conexões e preferências em arquivo JSON no diretório do usuário.
+// Salva projetos e conexões em arquivo JSON no diretório do usuário.
 package config
 
 import (
@@ -13,7 +13,8 @@ import (
 
 // Config representa a configuração do aplicativo.
 type Config struct {
-	Connections []types.ConnectionConfig `json:"connections"`
+	Projects    []types.Project        `json:"projects"`
+	Connections []types.ConnectionConfig `json:"connections"` // Conexões avulsas (sem projeto)
 }
 
 // Manager gerencia a configuração do app.
@@ -25,16 +26,14 @@ type Manager struct {
 
 // NewManager cria um novo gerenciador de configuração.
 func NewManager() (*Manager, error) {
-	// Obtém o diretório de config do usuário
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("erro ao obter diretório de config: %w", err)
+		return nil, fmt.Errorf("erro ao obter diretorio de config: %w", err)
 	}
 
-	// Cria o diretório do app se não existir
 	appDir := filepath.Join(configDir, "amzg-db")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
-		return nil, fmt.Errorf("erro ao criar diretório de config: %w", err)
+		return nil, fmt.Errorf("erro ao criar diretorio de config: %w", err)
 	}
 
 	configFile := filepath.Join(appDir, "config.json")
@@ -45,9 +44,7 @@ func NewManager() (*Manager, error) {
 		Config:     &Config{},
 	}
 
-	// Tenta carregar config existente
 	if err := m.Load(); err != nil {
-		// Se não existe, cria uma config vazia
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
@@ -76,23 +73,65 @@ func (m *Manager) Save() error {
 	return os.WriteFile(m.configFile, data, 0644)
 }
 
-// AddConnection adiciona uma nova conexão à configuração.
+// --- Projetos ---
+
+// AddProject adiciona ou atualiza um projeto.
+func (m *Manager) AddProject(project types.Project) error {
+	for i, p := range m.Config.Projects {
+		if p.Name == project.Name {
+			m.Config.Projects[i] = project
+			return m.Save()
+		}
+	}
+
+	m.Config.Projects = append(m.Config.Projects, project)
+	return m.Save()
+}
+
+// RemoveProject remove um projeto pelo nome.
+func (m *Manager) RemoveProject(name string) error {
+	for i, p := range m.Config.Projects {
+		if p.Name == name {
+			m.Config.Projects = append(m.Config.Projects[:i], m.Config.Projects[i+1:]...)
+			return m.Save()
+		}
+	}
+
+	return fmt.Errorf("projeto '%s' nao encontrado", name)
+}
+
+// GetProject retorna um projeto pelo nome.
+func (m *Manager) GetProject(name string) (*types.Project, error) {
+	for _, p := range m.Config.Projects {
+		if p.Name == name {
+			return &p, nil
+		}
+	}
+
+	return nil, fmt.Errorf("projeto '%s' nao encontrado", name)
+}
+
+// ListProjects retorna todos os projetos.
+func (m *Manager) ListProjects() []types.Project {
+	return m.Config.Projects
+}
+
+// --- Conexões (avulsas, sem projeto) ---
+
+// AddConnection adiciona ou atualiza uma conexão avulsa.
 func (m *Manager) AddConnection(config types.ConnectionConfig) error {
-	// Verifica se já existe uma conexão com esse nome
 	for i, c := range m.Config.Connections {
 		if c.Name == config.Name {
-			// Atualiza a existente
 			m.Config.Connections[i] = config
 			return m.Save()
 		}
 	}
 
-	// Adiciona nova
 	m.Config.Connections = append(m.Config.Connections, config)
 	return m.Save()
 }
 
-// RemoveConnection remove uma conexão pelo nome.
+// RemoveConnection remove uma conexão avulsa pelo nome.
 func (m *Manager) RemoveConnection(name string) error {
 	for i, c := range m.Config.Connections {
 		if c.Name == name {
@@ -101,10 +140,10 @@ func (m *Manager) RemoveConnection(name string) error {
 		}
 	}
 
-	return fmt.Errorf("conexão '%s' não encontrada", name)
+	return fmt.Errorf("conexao '%s' nao encontrada", name)
 }
 
-// GetConnection retorna uma conexão pelo nome.
+// GetConnection retorna uma conexão avulsa pelo nome.
 func (m *Manager) GetConnection(name string) (*types.ConnectionConfig, error) {
 	for _, c := range m.Config.Connections {
 		if c.Name == name {
@@ -112,10 +151,25 @@ func (m *Manager) GetConnection(name string) (*types.ConnectionConfig, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("conexão '%s' não encontrada", name)
+	return nil, fmt.Errorf("conexao '%s' nao encontrada", name)
 }
 
-// ListConnections retorna todas as conexões salvas.
+// ListConnections retorna todas as conexões avulsas.
 func (m *Manager) ListConnections() []types.ConnectionConfig {
 	return m.Config.Connections
+}
+
+// GetAllConnections retorna todas as conexões (de projetos + avulsas).
+func (m *Manager) GetAllConnections() []types.ConnectionConfig {
+	var all []types.ConnectionConfig
+
+	// Conexões de projetos
+	for _, p := range m.Config.Projects {
+		all = append(all, p.Connections...)
+	}
+
+	// Conexões avulsas
+	all = append(all, m.Config.Connections...)
+
+	return all
 }

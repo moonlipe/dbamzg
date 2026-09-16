@@ -42,6 +42,14 @@ export function GetDatabases(arg1) {
   return window['go']['main']['App']['GetDatabases'](arg1);
 }
 
+export function GetProject(arg1) {
+  return window['go']['main']['App']['GetProject'](arg1);
+}
+
+export function GetProjects() {
+  return window['go']['main']['App']['GetProjects']();
+}
+
 export function GetQueryHistory() {
   return window['go']['main']['App']['GetQueryHistory']();
 }
@@ -70,6 +78,10 @@ export function RemoveConnection(arg1) {
   return window['go']['main']['App']['RemoveConnection'](arg1);
 }
 
+export function RemoveProject(arg1) {
+  return window['go']['main']['App']['RemoveProject'](arg1);
+}
+
 export function ReplaceSQLVariables(arg1, arg2) {
   return window['go']['main']['App']['ReplaceSQLVariables'](arg1, arg2);
 }
@@ -80,6 +92,10 @@ export function Rollback(arg1) {
 
 export function SaveConnection(arg1) {
   return window['go']['main']['App']['SaveConnection'](arg1);
+}
+
+export function SaveProject(arg1) {
+  return window['go']['main']['App']['SaveProject'](arg1);
 }
 
 export function SearchQueryHistory(arg1) {

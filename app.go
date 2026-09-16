@@ -52,7 +52,27 @@ func (a *App) startup(ctx context.Context) {
 
 // GetSavedConnections retorna todas as conexões salvas
 func (a *App) GetSavedConnections() []types.ConnectionConfig {
-	return a.connMgr.GetSavedConnections()
+	return a.connMgr.GetAllConnections()
+}
+
+// SaveProject salva um projeto
+func (a *App) SaveProject(project types.Project) error {
+	return a.connMgr.SaveProject(project)
+}
+
+// RemoveProject remove um projeto
+func (a *App) RemoveProject(name string) error {
+	return a.connMgr.RemoveProject(name)
+}
+
+// GetProjects retorna todos os projetos
+func (a *App) GetProjects() []types.Project {
+	return a.connMgr.GetProjects()
+}
+
+// GetProject retorna um projeto pelo nome
+func (a *App) GetProject(name string) (*types.Project, error) {
+	return a.connMgr.GetProject(name)
 }
 
 // SaveConnection salva uma nova conexão
