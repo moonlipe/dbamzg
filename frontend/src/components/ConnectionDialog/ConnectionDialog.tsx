@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FC } from 'react';
 import { SaveConnection, TestConnection } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
-import { Settings2, Server, Building2, type LucideIcon } from 'lucide-react';
+import { Settings2, Server, type LucideIcon } from 'lucide-react';
 import { siSqlite } from 'simple-icons';
 import { siPostgresql } from 'simple-icons';
 import { siMysql } from 'simple-icons';
@@ -21,6 +21,15 @@ function SimpleIcon({ path, color, size = 20 }: { path: string; color?: string; 
   );
 }
 
+// Oracle icon from SVG Repo (Apache 2.0 License)
+function OracleIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#F00" fillRule="evenodd" d="M7.957359,18.9123664 C4.11670252,18.9123664 1,15.803458 1,11.9617373 C1,8.12000773 4.11670252,5 7.957359,5 L16.0437948,5 C19.8855156,5 23,8.12000773 23,11.9617373 C23,15.803458 19.8855156,18.9123664 16.0437948,18.9123664 L7.957359,18.9123664 L7.957359,18.9123664 Z M15.8639176,16.4585488 C18.352201,16.4585488 20.3674397,14.448858 20.3674397,11.9617373 C20.3674397,9.47460595 18.352201,7.45381934 15.8639176,7.45381934 L8.1360824,7.45381934 C5.64895285,7.45381934 3.63255855,9.47460595 3.63255855,11.9617373 C3.63255855,14.448858 5.64895285,16.4585488 8.1360824,16.4585488 L15.8639176,16.4585488 L15.8639176,16.4585488 Z"/>
+    </svg>
+  );
+}
+
 interface DbTypeItem {
   value: string;
   label: string;
@@ -28,6 +37,7 @@ interface DbTypeItem {
   iconPath?: string;
   iconColor?: string;
   iconComponent?: LucideIcon;
+  customIcon?: FC<{ size?: number }>;
 }
 
 const DB_TYPES: DbTypeItem[] = [
@@ -35,7 +45,7 @@ const DB_TYPES: DbTypeItem[] = [
   { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, iconPath: siPostgresql.path, iconColor: siPostgresql.hex },
   { value: 'mysql', label: 'MySQL', defaultPort: 3306, iconPath: siMysql.path, iconColor: siMysql.hex },
   { value: 'sqlserver', label: 'SQL Server', defaultPort: 1433, iconComponent: Server },
-  { value: 'oracle', label: 'Oracle', defaultPort: 1521, iconComponent: Building2 },
+  { value: 'oracle', label: 'Oracle', defaultPort: 1521, customIcon: OracleIcon },
   { value: 'custom', label: 'Personalizado', defaultPort: 0, iconComponent: Settings2 },
 ];
 
@@ -165,7 +175,9 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
                       : 'border-app-border bg-app-bg hover:border-zinc-600 text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  {t.iconComponent ? (
+                  {t.customIcon ? (
+                    <t.customIcon size={20} />
+                  ) : t.iconComponent ? (
                     <t.iconComponent size={20} />
                   ) : t.iconPath ? (
                     <SimpleIcon path={t.iconPath} color={`#${t.iconColor}`} size={20} />
