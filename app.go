@@ -173,3 +173,29 @@ func (a *App) ExtractSQLVariables(query string) []sqlvariables.Variable {
 func (a *App) ReplaceSQLVariables(query string, values map[string]string) string {
 	return a.variableMgr.ReplaceVariables(query, values)
 }
+
+// BeginTransaction inicia uma transação manual
+func (a *App) BeginTransaction(connName string) error {
+	return a.connMgr.BeginTransaction(connName)
+}
+
+// Commit confirma a transação ativa
+func (a *App) Commit(connName string) error {
+	return a.connMgr.Commit(connName)
+}
+
+// Rollback desfaz a transação ativa
+func (a *App) Rollback(connName string) error {
+	return a.connMgr.Rollback(connName)
+}
+
+// SetTransactionMode define o modo de transação
+func (a *App) SetTransactionMode(connName string, mode string) error {
+	return a.connMgr.SetTransactionMode(connName, types.TransactionMode(mode))
+}
+
+// GetTransactionMode retorna o modo de transação atual
+func (a *App) GetTransactionMode(connName string) (string, error) {
+	mode, err := a.connMgr.GetTransactionMode(connName)
+	return string(mode), err
+}

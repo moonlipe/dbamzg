@@ -4,7 +4,11 @@ import {types} from '../models';
 import {sqlvariables} from '../models';
 import {history} from '../models';
 
+export function BeginTransaction(arg1:string):Promise<void>;
+
 export function ClearQueryHistory():Promise<void>;
+
+export function Commit(arg1:string):Promise<void>;
 
 export function Connect(arg1:types.ConnectionConfig):Promise<void>;
 
@@ -30,12 +34,18 @@ export function GetSchemas(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function GetTables(arg1:string,arg2:string):Promise<Array<types.Table>>;
 
+export function GetTransactionMode(arg1:string):Promise<string>;
+
 export function RemoveConnection(arg1:string):Promise<void>;
 
 export function ReplaceSQLVariables(arg1:string,arg2:Record<string, string>):Promise<string>;
 
+export function Rollback(arg1:string):Promise<void>;
+
 export function SaveConnection(arg1:types.ConnectionConfig):Promise<void>;
 
 export function SearchQueryHistory(arg1:string):Promise<Array<history.QueryEntry>>;
+
+export function SetTransactionMode(arg1:string,arg2:string):Promise<void>;
 
 export function TestConnection(arg1:types.ConnectionConfig):Promise<void>;

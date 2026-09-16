@@ -6,6 +6,8 @@ import {
   Disconnect,
   ExecuteQuery,
   RemoveConnection,
+  Commit,
+  Rollback,
 } from '../wailsjs/go/main/App';
 import { types } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
@@ -150,6 +152,26 @@ function App() {
       loadConnections();
     } catch (err) {
       console.error('Erro ao remover conexao:', err);
+    }
+  };
+
+  const handleCommit = async () => {
+    if (!activeTab.connection) return;
+    try {
+      await Commit(activeTab.connection);
+      updateTab(activeTabId, { error: null });
+    } catch (err) {
+      updateTab(activeTabId, { error: `Erro ao fazer commit: ${err}` });
+    }
+  };
+
+  const handleRollback = async () => {
+    if (!activeTab.connection) return;
+    try {
+      await Rollback(activeTab.connection);
+      updateTab(activeTabId, { error: null });
+    } catch (err) {
+      updateTab(activeTabId, { error: `Erro ao fazer rollback: ${err}` });
     }
   };
 
@@ -352,6 +374,35 @@ function App() {
             </button>
             <div className="h-3 w-px bg-app-border" />
             <span className="text-[10px] text-zinc-600 font-mono">Ctrl+Enter</span>
+
+            {/* Transaction controls */}
+            {activeTab.connection && (
+              <>
+                <div className="h-3 w-px bg-app-border" />
+                <button
+                  onClick={() => handleCommit()}
+                  disabled={!activeTab.connection}
+                  className="h-6 px-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                  title="Commit (Ctrl+Shift+C)"
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  Commit
+                </button>
+                <button
+                  onClick={() => handleRollback()}
+                  disabled={!activeTab.connection}
+                  className="h-6 px-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                  title="Rollback (Ctrl+Shift+Z)"
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Rollback
+                </button>
+              </>
+            )}
 
             <div className="flex-1" />
             {activeTab.result && (

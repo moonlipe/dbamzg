@@ -22,9 +22,11 @@ type ConnectionManager struct {
 
 // ActiveConnection representa uma conexão ativa com o banco.
 type ActiveConnection struct {
-	Config types.ConnectionConfig
-	DB     *sql.DB
-	Driver types.Driver
+	Config      types.ConnectionConfig
+	DB          *sql.DB
+	Driver      types.Driver
+	Tx          *sql.Tx            // Transação ativa (nil se autocommit)
+	TxMode      types.TransactionMode // Modo de transação
 }
 
 // NewConnectionManager cria um novo gerenciador de conexões.
@@ -207,7 +209,120 @@ func (cm *ConnectionManager) DisconnectAll() {
 	defer cm.mu.Unlock()
 
 	for name, conn := range cm.conns {
+		// Rollback transação pendente se existir
+		if conn.Tx != nil {
+			conn.Tx.Rollback()
+		}
 		conn.DB.Close()
 		delete(cm.conns, name)
 	}
+}
+
+// BeginTransaction inicia uma transação manual.
+func (cm *ConnectionManager) BeginTransaction(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conn, exists := cm.conns[name]
+	if !exists {
+		return fmt.Errorf("conexao '%s' nao encontrada", name)
+	}
+
+	if conn.Tx != nil {
+		return fmt.Errorf("transacao ja esta ativa em '%s'", name)
+	}
+
+	tx, err := conn.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("erro ao iniciar transacao: %w", err)
+	}
+
+	conn.Tx = tx
+	conn.TxMode = types.Manual
+	log.Printf("[manager] Transacao iniciada em '%s'", name)
+	return nil
+}
+
+// Commit confirma a transação ativa.
+func (cm *ConnectionManager) Commit(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conn, exists := cm.conns[name]
+	if !exists {
+		return fmt.Errorf("conexao '%s' nao encontrada", name)
+	}
+
+	if conn.Tx == nil {
+		return fmt.Errorf("nenhuma transacao ativa em '%s'", name)
+	}
+
+	if err := conn.Tx.Commit(); err != nil {
+		return fmt.Errorf("erro ao fazer commit: %w", err)
+	}
+
+	conn.Tx = nil
+	conn.TxMode = types.Autocommit
+	log.Printf("[manager] Commit realizado em '%s'", name)
+	return nil
+}
+
+// Rollback desfaz a transação ativa.
+func (cm *ConnectionManager) Rollback(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conn, exists := cm.conns[name]
+	if !exists {
+		return fmt.Errorf("conexao '%s' nao encontrada", name)
+	}
+
+	if conn.Tx == nil {
+		return fmt.Errorf("nenhuma transacao ativa em '%s'", name)
+	}
+
+	if err := conn.Tx.Rollback(); err != nil {
+		return fmt.Errorf("erro ao fazer rollback: %w", err)
+	}
+
+	conn.Tx = nil
+	conn.TxMode = types.Autocommit
+	log.Printf("[manager] Rollback realizado em '%s'", name)
+	return nil
+}
+
+// SetTransactionMode define o modo de transação.
+func (cm *ConnectionManager) SetTransactionMode(name string, mode types.TransactionMode) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conn, exists := cm.conns[name]
+	if !exists {
+		return fmt.Errorf("conexao '%s' nao encontrada", name)
+	}
+
+	// Se mudando de manual para autocommit, faz commit automático
+	if conn.TxMode == types.Manual && mode == types.Autocommit && conn.Tx != nil {
+		if err := conn.Tx.Commit(); err != nil {
+			return fmt.Errorf("erro ao fazer commit automatico: %w", err)
+		}
+		conn.Tx = nil
+	}
+
+	conn.TxMode = mode
+	log.Printf("[manager] Modo de transacao alterado para '%s' em '%s'", mode, name)
+	return nil
+}
+
+// GetTransactionMode retorna o modo de transação atual.
+func (cm *ConnectionManager) GetTransactionMode(name string) (types.TransactionMode, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	conn, exists := cm.conns[name]
+	if !exists {
+		return "", fmt.Errorf("conexao '%s' nao encontrada", name)
+	}
+
+	return conn.TxMode, nil
 }
