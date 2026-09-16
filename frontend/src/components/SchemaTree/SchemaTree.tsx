@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ChevronRight, ChevronDown, Database, Table, Columns, Key } from 'lucide-react';
 import { GetDatabases, GetSchemas, GetTables, GetColumns } from '../../../wailsjs/go/main/App';
-import { types } from '../../../wailsjs/go/models';
 
 interface TreeNode {
   id: string;
@@ -9,6 +8,7 @@ interface TreeNode {
   type: 'connection' | 'database' | 'schema' | 'table' | 'column';
   children?: TreeNode[];
   data?: any;
+  loaded?: boolean;
 }
 
 interface SchemaTreeProps {
@@ -17,89 +17,127 @@ interface SchemaTreeProps {
 }
 
 export default function SchemaTree({ connectionName, onTableSelect }: SchemaTreeProps) {
-  const [tree, setTree] = useState<TreeNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<Set<string>>(new Set());
+  const [tree, setTree] = useState<TreeNode[]>([]);
 
-  useEffect(() => {
-    loadTree();
-  }, [connectionName]);
-
-  const loadTree = async () => {
-    if (!connectionName) return;
-    setLoading(true);
-
-    try {
-      const databases = await GetDatabases(connectionName);
-      const dbNodes: TreeNode[] = [];
-
-      for (const dbName of databases || []) {
-        const schemas = await GetSchemas(connectionName, dbName);
-        const schemaNodes: TreeNode[] = [];
-
-        for (const schemaName of schemas || []) {
-          const tables = await GetTables(connectionName, schemaName);
-          const tableNodes: TreeNode[] = [];
-
-          for (const table of tables || []) {
-            const columns = await GetColumns(connectionName, table.Name);
-            const columnNodes: TreeNode[] = (columns || []).map((col) => ({
-              id: `${connectionName}/${dbName}/${schemaName}/${table.Name}/${col.Name}`,
-              name: col.Name,
-              type: 'column' as const,
-              data: col,
-            }));
-
-            tableNodes.push({
-              id: `${connectionName}/${dbName}/${schemaName}/${table.Name}`,
-              name: table.Name,
-              type: 'table',
-              children: columnNodes,
-              data: table,
-            });
-          }
-
-          schemaNodes.push({
-            id: `${connectionName}/${dbName}/${schemaName}`,
-            name: schemaName,
-            type: 'schema',
-            children: tableNodes,
-          });
-        }
-
-        dbNodes.push({
-          id: `${connectionName}/${dbName}`,
-          name: dbName,
-          type: 'database',
-          children: schemaNodes,
-        });
-      }
-
-      setTree(dbNodes);
-      // Auto-expand first level
-      if (dbNodes.length > 0) {
-        setExpanded(new Set([dbNodes[0].id]));
-      }
-    } catch (err) {
-      console.error('Erro ao carregar schema:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => {
+  const setLoadingState = (id: string, isLoading: boolean) => {
+    setLoading((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (isLoading) next.add(id);
+      else next.delete(id);
       return next;
     });
   };
 
-  const getIcon = (type: string, isExpanded?: boolean) => {
+  const toggleExpand = async (node: TreeNode) => {
+    const isExpanded = expanded.has(node.id);
+
+    if (isExpanded) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.delete(node.id);
+        return next;
+      });
+      return;
+    }
+
+    // Expand first
+    setExpanded((prev) => new Set(prev).add(node.id));
+
+    // Load children if not loaded yet
+    if (!node.loaded && node.type !== 'column') {
+      await loadChildren(node);
+    }
+  };
+
+  const loadChildren = async (node: TreeNode) => {
+    setLoadingState(node.id, true);
+
+    try {
+      let children: TreeNode[] = [];
+
+      if (node.type === 'connection') {
+        // Load databases
+        const databases = await GetDatabases(connectionName);
+        children = (databases || []).map((dbName) => ({
+          id: `${connectionName}/${dbName}`,
+          name: dbName,
+          type: 'database' as const,
+          loaded: false,
+        }));
+      } else if (node.type === 'database') {
+        // Load schemas
+        const dbName = node.name;
+        const schemas = await GetSchemas(connectionName, dbName);
+        children = (schemas || []).map((schemaName) => ({
+          id: `${connectionName}/${dbName}/${schemaName}`,
+          name: schemaName,
+          type: 'schema' as const,
+          loaded: false,
+        }));
+      } else if (node.type === 'schema') {
+        // Load tables
+        const parts = node.id.split('/');
+        const schemaName = parts[parts.length - 1];
+        const tables = await GetTables(connectionName, schemaName);
+        children = (tables || []).map((table) => ({
+          id: `${node.id}/${table.Name}`,
+          name: table.Name,
+          type: 'table' as const,
+          loaded: false,
+          data: table,
+        }));
+      } else if (node.type === 'table') {
+        // Load columns
+        const tableName = node.name;
+        const columns = await GetColumns(connectionName, tableName);
+        children = (columns || []).map((col) => ({
+          id: `${node.id}/${col.Name}`,
+          name: col.Name,
+          type: 'column' as const,
+          loaded: true,
+          data: col,
+        }));
+      }
+
+      // Update the tree with loaded children
+      setTree((prev) => updateNodeChildren(prev, node.id, children, true));
+    } catch (err) {
+      console.error('Erro ao carregar filhos:', err);
+    } finally {
+      setLoadingState(node.id, false);
+    }
+  };
+
+  const updateNodeChildren = (
+    nodes: TreeNode[],
+    targetId: string,
+    children: TreeNode[],
+    loaded: boolean
+  ): TreeNode[] => {
+    return nodes.map((node) => {
+      if (node.id === targetId) {
+        return { ...node, children, loaded };
+      }
+      if (node.children) {
+        return { ...node, children: updateNodeChildren(node.children, targetId, children, loaded) };
+      }
+      return node;
+    });
+  };
+
+  // Initialize with connection root node
+  if (tree.length === 0) {
+    setTree([{
+      id: connectionName,
+      name: connectionName,
+      type: 'connection',
+      loaded: false,
+    }]);
+  }
+
+  const getIcon = (type: string) => {
     const size = 14;
     switch (type) {
       case 'database':
@@ -121,8 +159,9 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
 
   const renderNode = (node: TreeNode, level: number = 0) => {
     const isExpanded = expanded.has(node.id);
-    const hasChildren = node.children && node.children.length > 0;
+    const hasChildren = node.type !== 'column';
     const isTable = node.type === 'table';
+    const isLoadingNode = loading.has(node.id);
 
     return (
       <div key={node.id}>
@@ -135,17 +174,19 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={() => {
             if (hasChildren) {
-              toggleExpand(node.id);
+              toggleExpand(node);
             }
             if (isTable) {
               onTableSelect(node.name);
             }
           }}
         >
-          {/* Expand arrow */}
+          {/* Expand arrow or spinner */}
           {hasChildren ? (
             <span className="w-4 h-4 flex items-center justify-center shrink-0">
-              {isExpanded ? (
+              {isLoadingNode ? (
+                <div className="w-3 h-3 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
+              ) : isExpanded ? (
                 <ChevronDown size={12} className="text-zinc-500" />
               ) : (
                 <ChevronRight size={12} className="text-zinc-500" />
@@ -156,7 +197,7 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
           )}
 
           {/* Icon */}
-          {getIcon(node.type, isExpanded)}
+          {getIcon(node.type)}
 
           {/* Name */}
           <span className={`text-xs truncate ${isTable ? 'font-medium' : ''}`}>
@@ -177,33 +218,18 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
         </div>
 
         {/* Children */}
-        {isExpanded && hasChildren && (
+        {isExpanded && node.children && (
           <div className="animate-fade-in">
-            {node.children!.map((child) => renderNode(child, level + 1))}
+            {node.children.map((child) => renderNode(child, level + 1))}
           </div>
         )}
       </div>
     );
   };
 
-  if (loading) {
-    return (
-      <div className="px-4 py-3 text-xs text-zinc-500 flex items-center gap-2">
-        <div className="w-3 h-3 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
-        Carregando...
-      </div>
-    );
-  }
-
   return (
     <div className="text-xs py-1">
-      {tree.length === 0 ? (
-        <div className="px-4 py-2 text-zinc-500 text-xs">
-          Nenhum schema encontrado
-        </div>
-      ) : (
-        tree.map((node) => renderNode(node))
-      )}
+      {tree.map((node) => renderNode(node))}
     </div>
   );
 }
