@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './style.css';
 import {
   GetSavedConnections,
@@ -42,6 +42,15 @@ function App() {
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<types.ConnectionConfig | null>(null);
+
+  // Refs to avoid stale closures in callbacks
+  const tabsRef = useRef(tabs);
+  const activeConnectionRef = useRef(activeConnection);
+  const activeTabIdRef = useRef(activeTabId);
+
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+  useEffect(() => { activeConnectionRef.current = activeConnection; }, [activeConnection]);
+  useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -91,11 +100,12 @@ function App() {
   };
 
   const handleExecuteQuery = async (tabId?: string) => {
-    const targetId = tabId || activeTabId;
-    const tab = tabs.find((t) => t.id === targetId);
+    const targetId = tabId || activeTabIdRef.current;
+    const currentTabs = tabsRef.current;
+    const tab = currentTabs.find((t) => t.id === targetId);
     if (!tab) return;
 
-    const conn = tab.connection || activeConnection;
+    const conn = tab.connection || activeConnectionRef.current;
     if (!conn) {
       updateTab(targetId, { error: 'Nenhuma conexao ativa' });
       return;
