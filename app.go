@@ -150,6 +150,17 @@ func (a *App) ExecuteQuery(connName, query string) (*types.QueryResult, error) {
 		return nil, err
 	}
 
+	executor := db.NewExecutor(conn)
+	return executor.Execute(query)
+}
+
+// ExecuteQueryUnlimited executa uma query sem limite de linhas
+func (a *App) ExecuteQueryUnlimited(connName, query string) (*types.QueryResult, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 	result, err := conn.Driver.ExecuteQuery(conn.DB, query)
 	if err != nil {

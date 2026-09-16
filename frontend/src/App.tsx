@@ -5,6 +5,7 @@ import {
   Connect,
   Disconnect,
   ExecuteQuery,
+  ExecuteQueryUnlimited,
   RemoveConnection,
   Commit,
   Rollback,
@@ -23,13 +24,15 @@ interface Tab {
   id: string;
   title: string;
   query: string;
+  originalQuery: string; // Query sem LIMIT para "Carregar tudo"
   result: types.QueryResult | null;
   error: string | null;
   connection: string | null;
-  hasChanges: boolean; // smartcommit: track if DML executed
+  hasChanges: boolean;
+  isLoading: boolean;
 }
 
-const ROW_LIMIT = 1000;
+const ROW_LIMIT = 200; // Limite padrão do backend
 
 let tabCounter = 0;
 
@@ -39,10 +42,12 @@ function createTab(connection: string | null = null): Tab {
     id: `tab-${Date.now()}-${tabCounter}`,
     title: `Query ${tabCounter}`,
     query: '',
+    originalQuery: '',
     result: null,
     error: null,
     connection,
     hasChanges: false,
+    isLoading: false,
   };
 }
 
@@ -144,7 +149,7 @@ function App() {
     }
 
     try {
-      updateTab(targetId, { error: null });
+      updateTab(targetId, { error: null, isLoading: true, originalQuery: tab.query });
       setPage(1);
       setShowAllRows(false);
       const res = await ExecuteQuery(conn, tab.query);
@@ -167,6 +172,27 @@ function App() {
       updateTab(targetId, patch);
     } catch (err) {
       updateTab(targetId, { result: null, error: `Erro ao executar query: ${err}` });
+    } finally {
+      updateTab(targetId, { isLoading: false });
+    }
+  };
+
+  const handleLoadAllRows = async () => {
+    const targetId = activeTabIdRef.current;
+    const currentTabs = tabsRef.current;
+    const tab = currentTabs.find((t) => t.id === targetId);
+    if (!tab || !tab.originalQuery) return;
+
+    const conn = tab.connection || activeConnectionRef.current;
+    if (!conn) return;
+
+    try {
+      updateTab(targetId, { isLoading: true, error: null });
+      const res = await ExecuteQueryUnlimited(conn, tab.originalQuery);
+      updateTab(targetId, { result: res, error: null, isLoading: false });
+      setShowAllRows(true);
+    } catch (err) {
+      updateTab(targetId, { result: null, error: `Erro ao carregar todos os dados: ${err}`, isLoading: false });
     }
   };
 
@@ -457,13 +483,24 @@ function App() {
           <div className="h-9 px-2 bg-app-surface border-b border-app-border flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleExecuteQuery()}
-              disabled={!activeTab.connection}
+              disabled={!activeTab.connection || activeTab.isLoading}
               className="h-7 px-3 bg-accent-green hover:bg-accent-green/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-[11px] font-medium text-white flex items-center gap-1 transition-colors"
             >
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
-                <path d="M2 1l7 4-7 4V1z" />
-              </svg>
-              Run
+              {activeTab.isLoading ? (
+                <>
+                  <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" strokeDasharray="31.42" strokeDashoffset="10" />
+                  </svg>
+                  Executando...
+                </>
+              ) : (
+                <>
+                  <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
+                    <path d="M2 1l7 4-7 4V1z" />
+                  </svg>
+                  Run
+                </>
+              )}
             </button>
             <div className="h-3 w-px bg-app-border" />
             <span className="text-[10px] text-zinc-600 font-mono">Ctrl+Enter</span>
@@ -605,13 +642,14 @@ function App() {
                       {!showAllRows && (
                         <button
                           onClick={() => {
-                            if (confirm(`Carregar todas as ${activeTab.result?.Rows.length} linhas? Isso pode ser lento.`)) {
-                              setShowAllRows(true);
+                            if (confirm(`Carregar todas as linhas? Isso pode ser lento para grandes resultados.`)) {
+                              handleLoadAllRows();
                             }
                           }}
-                          className="px-2 py-0.5 bg-accent-blue/20 hover:bg-accent-blue/30 text-accent-blue rounded transition-colors"
+                          disabled={activeTab.isLoading}
+                          className="px-2 py-0.5 bg-accent-blue/20 hover:bg-accent-blue/30 text-accent-blue rounded transition-colors disabled:opacity-50"
                         >
-                          Carregar tudo
+                          {activeTab.isLoading ? 'Carregando...' : 'Carregar tudo'}
                         </button>
                       )}
                       {showAllRows ? (

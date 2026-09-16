@@ -26,6 +26,10 @@ export function ExecuteQuery(arg1, arg2) {
   return window['go']['main']['App']['ExecuteQuery'](arg1, arg2);
 }
 
+export function ExecuteQueryUnlimited(arg1, arg2) {
+  return window['go']['main']['App']['ExecuteQueryUnlimited'](arg1, arg2);
+}
+
 export function ExportData(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExportData'](arg1, arg2, arg3);
 }

@@ -4,11 +4,14 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"amzg-db/internal/types"
 )
+
+const DefaultRowLimit = 200
 
 // Executor executa queries e gerencia transações.
 type Executor struct {
@@ -20,11 +23,54 @@ func NewExecutor(conn *ActiveConnection) *Executor {
 	return &Executor{conn: conn}
 }
 
+// isSelectQuery verifica se a query é um SELECT.
+func isSelectQuery(query string) bool {
+	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	return strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH")
+}
+
+// addLimit adiciona cláusula LIMIT/TOP à query.
+// Retorna a query modificada com limite.
+func addLimit(query string, limit int, driverType string) string {
+	if !isSelectQuery(query) {
+		return query
+	}
+
+	// Não adicionar limit se já tiver TOP ou LIMIT
+	upperQuery := strings.ToUpper(query)
+	if strings.Contains(upperQuery, " TOP ") || strings.Contains(upperQuery, "\nTOP ") || strings.HasPrefix(strings.TrimSpace(upperQuery), "TOP ") {
+		return query
+	}
+	if matched, _ := regexp.MatchString(`(?i)\bLIMIT\s+\d`, query); matched {
+		return query
+	}
+
+	trimmed := strings.TrimSpace(query)
+
+	// Para SQL Server, usar TOP
+	if driverType == "sqlserver" {
+		// Inserir TOP N após o SELECT
+		if strings.HasPrefix(strings.ToUpper(trimmed), "SELECT ") {
+			return "SELECT TOP " + fmt.Sprintf("%d", limit) + " " + trimmed[7:]
+		}
+	}
+
+	// Para PostgreSQL, MySQL, SQLite, Oracle - usar LIMIT no final
+	if strings.HasSuffix(strings.TrimSpace(trimmed), ";") {
+		trimmed = strings.TrimSuffix(trimmed, ";")
+		return trimmed + fmt.Sprintf(" LIMIT %d;", limit)
+	}
+	return trimmed + fmt.Sprintf(" LIMIT %d", limit)
+}
+
 // Execute executa uma query e retorna o resultado.
 func (e *Executor) Execute(query string) (*types.QueryResult, error) {
 	start := time.Now()
 
-	result, err := e.conn.Driver.ExecuteQuery(e.conn.DB, query)
+	// Adicionar limit para queries SELECT
+	limitedQuery := addLimit(query, DefaultRowLimit, e.conn.Config.Type)
+
+	result, err := e.conn.Driver.ExecuteQuery(e.conn.DB, limitedQuery)
 	if err != nil {
 		return nil, err
 	}
