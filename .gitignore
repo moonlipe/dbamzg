@@ -1,3 +1,22 @@
 build/bin
 node_modules
 frontend/dist
+
+# Binarios
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go SDK / tarballs
+*.tar.gz
+*.zip
+
+# Dados locais
+*.db
+*.db-shm
+*.db-wal
+
+# Config local
+.env
+*.local
