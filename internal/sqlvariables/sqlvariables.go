@@ -52,17 +52,21 @@ func (vm *VariableManager) ExtractVariables(query string) []Variable {
 	}
 
 	// Padrão :nome (mas não ::nome que é PostgreSQL cast)
-	pattern2 := regexp.MustCompile(`(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)`)
-	matches2 := pattern2.FindAllStringSubmatch(query, -1)
-	for _, match := range matches2 {
-		if len(match) > 1 {
-			name := match[1]
-			// Ignora palavras SQL comuns
-			if !isSQLKeyword(name) && !seen[name] {
-				seen[name] = true
-				v := vm.getOrCreateVariable(name)
-				vars = append(vars, *v)
-			}
+	pattern2 := regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	allMatches2 := pattern2.FindAllStringSubmatchIndex(query, -1)
+	for _, loc := range allMatches2 {
+		// Verifica se o caractere anterior ao ':' não é ':'
+		if loc[0] > 0 && query[loc[0]-1] == ':' {
+			continue
+		}
+		start := loc[2]
+		end := loc[3]
+		name := query[start:end]
+		// Ignora palavras SQL comuns
+		if !isSQLKeyword(name) && !seen[name] {
+			seen[name] = true
+			v := vm.getOrCreateVariable(name)
+			vars = append(vars, *v)
 		}
 	}
 
@@ -90,7 +94,7 @@ func (vm *VariableManager) ReplaceVariables(query string, values map[string]stri
 
 	// Substitui :nome
 	for name, value := range values {
-		pattern := regexp.MustCompile(`(?<!:):` + regexp.QuoteMeta(name) + `\b`)
+		pattern := regexp.MustCompile(`:` + regexp.QuoteMeta(name) + `\b`)
 		result = pattern.ReplaceAllString(result, value)
 
 		// Salva no histórico

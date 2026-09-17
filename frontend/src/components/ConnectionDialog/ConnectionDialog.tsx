@@ -5,12 +5,14 @@ import { Settings2, Server, type LucideIcon } from 'lucide-react';
 import { siSqlite } from 'simple-icons';
 import { siPostgresql } from 'simple-icons';
 import { siMysql } from 'simple-icons';
+import ColorPicker from '../ColorPicker/ColorPicker';
 
 interface ConnectionDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
   editConfig?: types.ConnectionConfig;
+  projects: types.Project[];
 }
 
 function SimpleIcon({ path, color, size = 20 }: { path: string; color?: string; size?: number }) {
@@ -49,12 +51,7 @@ const DB_TYPES: DbTypeItem[] = [
   { value: 'custom', label: 'Personalizado', defaultPort: 0, iconComponent: Settings2 },
 ];
 
-const COLORS = [
-  '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#f97316',
-  '#eab308', '#06b6d4', '#8b5cf6', '#f43f5e', '#14b8a6',
-];
-
-export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }: ConnectionDialogProps) {
+export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig, projects }: ConnectionDialogProps) {
   const [config, setConfig] = useState<types.ConnectionConfig>({
     Name: '',
     Type: 'sqlite',
@@ -108,6 +105,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
   };
 
   const handleSave = async () => {
+    if (!config.ProjectID) return;
     try {
       await SaveConnection(config);
       onSave();
@@ -149,6 +147,21 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
 
         {/* Body */}
         <div className="p-5 space-y-4 max-h-[calc(85vh-140px)] overflow-y-auto">
+          {/* Projeto */}
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Projeto</label>
+            <select
+              value={config.ProjectID}
+              onChange={(e) => setConfig({ ...config, ProjectID: e.target.value })}
+              className="w-full h-9 px-3 bg-app-bg border border-app-border rounded text-sm focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors"
+            >
+              <option value="">Selecione um projeto...</option>
+              {projects.map((p) => (
+                <option key={p.Name} value={p.Name}>{p.Name}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Name */}
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1.5">Nome da Conexão</label>
@@ -189,26 +202,10 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
           </div>
 
           {/* Color */}
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Cor de Identificação</label>
-            <div className="flex gap-2">
-              {COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setConfig({ ...config, Color: color })}
-                  className={`w-7 h-7 rounded-full transition-all ${
-                    config.Color === color
-                      ? 'ring-2 ring-offset-2 ring-offset-app-surface'
-                      : 'hover:scale-110'
-                  }`}
-                  style={{
-                    backgroundColor: color,
-                    boxShadow: config.Color === color ? `0 0 0 2px #0f1117, 0 0 0 4px ${color}` : 'none',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+          <ColorPicker
+            value={config.Color}
+            onChange={(color) => setConfig({ ...config, Color: color })}
+          />
 
           {isFileBased ? (
             /* SQLite */
@@ -391,7 +388,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig }
             </button>
             <button
               onClick={handleSave}
-              disabled={!config.Name}
+              disabled={!config.Name || !config.ProjectID}
               className="h-8 px-4 bg-accent-blue hover:bg-accent-blue/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition-colors"
             >
               Salvar

@@ -16,6 +16,8 @@ export function Disconnect(arg1:string):Promise<void>;
 
 export function ExecuteQuery(arg1:string,arg2:string,arg3:string):Promise<types.QueryResult>;
 
+export function ExecuteQueryPaginated(arg1:string,arg2:string,arg3:number,arg4:number,arg5:string):Promise<types.QueryResult>;
+
 export function ExecuteQueryUnlimited(arg1:string,arg2:string):Promise<types.QueryResult>;
 
 export function ExportData(arg1:types.QueryResult,arg2:string,arg3:string):Promise<void>;
@@ -25,6 +27,10 @@ export function ExtractSQLVariables(arg1:string):Promise<Array<sqlvariables.Vari
 export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>;
 
 export function GetDatabases(arg1:string):Promise<Array<string>>;
+
+export function GetFunctions(arg1:string,arg2:string):Promise<Array<types.DBFunc>>;
+
+export function GetProcedures(arg1:string,arg2:string):Promise<Array<types.Procedure>>;
 
 export function GetProject(arg1:string):Promise<types.Project>;
 
@@ -36,15 +42,23 @@ export function GetQueryHistoryByConnection(arg1:string):Promise<Array<history.Q
 
 export function GetSavedConnections():Promise<Array<types.ConnectionConfig>>;
 
+export function GetSavedQueries():Promise<Array<types.SavedQuery>>;
+
 export function GetSchemas(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function GetTables(arg1:string,arg2:string):Promise<Array<types.Table>>;
 
 export function GetTransactionMode(arg1:string):Promise<string>;
 
+export function GetTriggers(arg1:string,arg2:string):Promise<Array<types.Trigger>>;
+
+export function GetViews(arg1:string,arg2:string):Promise<Array<types.View>>;
+
 export function RemoveConnection(arg1:string):Promise<void>;
 
 export function RemoveProject(arg1:string):Promise<void>;
+
+export function RemoveSavedQuery(arg1:string):Promise<void>;
 
 export function ReplaceSQLVariables(arg1:string,arg2:Record<string, string>):Promise<string>;
 
@@ -53,6 +67,8 @@ export function Rollback(arg1:string):Promise<void>;
 export function SaveConnection(arg1:types.ConnectionConfig):Promise<void>;
 
 export function SaveProject(arg1:types.Project):Promise<void>;
+
+export function SaveSavedQuery(arg1:types.SavedQuery):Promise<void>;
 
 export function SearchQueryHistory(arg1:string):Promise<Array<history.QueryEntry>>;
 

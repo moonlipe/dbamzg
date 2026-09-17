@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -145,6 +146,46 @@ func (a *App) GetColumns(connName, table string) ([]types.Column, error) {
 	return conn.Driver.GetColumns(conn.DB, table)
 }
 
+// GetViews retorna as views de um schema
+func (a *App) GetViews(connName, schema string) ([]types.View, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.Driver.GetViews(conn.DB, schema)
+}
+
+// GetProcedures retorna as stored procedures de um schema
+func (a *App) GetProcedures(connName, schema string) ([]types.Procedure, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.Driver.GetProcedures(conn.DB, schema)
+}
+
+// GetFunctions retorna as functions de um schema
+func (a *App) GetFunctions(connName, schema string) ([]types.DBFunc, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.Driver.GetFunctions(conn.DB, schema)
+}
+
+// GetTriggers retorna os triggers de um schema
+func (a *App) GetTriggers(connName, schema string) ([]types.Trigger, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.Driver.GetTriggers(conn.DB, schema)
+}
+
 // ExecuteQuery executa uma query
 func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*types.QueryResult, error) {
 	conn, err := a.connMgr.GetConnection(connName)
@@ -220,6 +261,23 @@ func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*typ
 		}
 	} else {
 		// Executar direto (autocommit ou smartcommit sem mudanças)
+		// Adicionar limit para queries SELECT
+		trimmed := strings.TrimSpace(strings.ToUpper(query))
+		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
+			if !strings.Contains(trimmed, " TOP ") && !strings.Contains(trimmed, "\nTOP ") && !strings.HasPrefix(strings.TrimSpace(trimmed), "TOP ") {
+				if matched, _ := regexp.MatchString(`(?i)\bLIMIT\s+\d`, query); !matched {
+					if conn.Config.Type == "sqlserver" {
+						query = "SELECT TOP 200 " + query[7:]
+					} else {
+						if strings.HasSuffix(strings.TrimSpace(query), ";") {
+							query = strings.TrimSuffix(strings.TrimSpace(query), ";") + " LIMIT 200;"
+						} else {
+							query = strings.TrimSpace(query) + " LIMIT 200"
+						}
+					}
+				}
+			}
+		}
 		result, err = conn.Driver.ExecuteQuery(conn.DB, query)
 		if err != nil {
 			return nil, err
@@ -307,4 +365,111 @@ func (a *App) SetTransactionMode(connName string, mode string) error {
 func (a *App) GetTransactionMode(connName string) (string, error) {
 	mode, err := a.connMgr.GetTransactionMode(connName)
 	return string(mode), err
+}
+
+// --- Queries Salvas ---
+
+// SaveSavedQuery salva uma query
+func (a *App) SaveSavedQuery(q types.SavedQuery) error {
+	return a.connMgr.SaveSavedQuery(q)
+}
+
+// RemoveSavedQuery remove uma query salva
+func (a *App) RemoveSavedQuery(name string) error {
+	return a.connMgr.RemoveSavedQuery(name)
+}
+
+// GetSavedQueries retorna todas as queries salvas
+func (a *App) GetSavedQueries() []types.SavedQuery {
+	return a.connMgr.GetSavedQueries()
+}
+
+// ExecuteQueryPaginated executa uma query com paginação server-side
+func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, transactionMode string) (*types.QueryResult, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+
+	// Wrap the query with pagination
+	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	isSelect := strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH")
+
+	if isSelect {
+		// Check if query already has LIMIT/OFFSET or TOP
+		matched, _ := regexp.MatchString(`(?i)\bLIMIT\s+\d`, query)
+		hasLimit := matched
+		hasTop := strings.Contains(trimmed, " TOP ")
+
+		if !hasLimit && !hasTop {
+			// Remove trailing semicolon for appending
+			q := strings.TrimSpace(query)
+			q = strings.TrimSuffix(q, ";")
+
+			if conn.Config.Type == "sqlserver" {
+				// SQL Server uses OFFSET/FETCH but requires ORDER BY
+				hasOrderBy := strings.Contains(trimmed, " ORDER BY ")
+				orderBy := ""
+				if !hasOrderBy {
+					orderBy = " ORDER BY (SELECT NULL)"
+				}
+				query = q + orderBy + fmt.Sprintf(" OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", offset, limit)
+			} else {
+				query = q + fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+			}
+		}
+	}
+
+	// If in manual mode with active transaction, use transaction
+	if transactionMode == "manual" && conn.Tx != nil {
+		if isSelect {
+			rows, err := conn.Tx.Query(query)
+			if err != nil {
+				return nil, err
+			}
+			defer rows.Close()
+
+			columns, err := rows.Columns()
+			if err != nil {
+				return nil, err
+			}
+
+			var data [][]interface{}
+			for rows.Next() {
+				values := make([]interface{}, len(columns))
+				valuePtrs := make([]interface{}, len(columns))
+				for i := range values {
+					valuePtrs[i] = &values[i]
+				}
+				if err := rows.Scan(valuePtrs...); err != nil {
+					return nil, err
+				}
+				for i, v := range values {
+					if b, ok := v.([]byte); ok {
+						values[i] = string(b)
+					}
+				}
+				data = append(data, values)
+			}
+
+			result := &types.QueryResult{
+				Columns:  columns,
+				Rows:     data,
+				RowCount: len(data),
+				Message:  fmt.Sprintf("%d rows returned", len(data)),
+			}
+			result.Duration = time.Since(start).Milliseconds()
+			return result, nil
+		}
+	}
+
+	result, err := conn.Driver.ExecuteQuery(conn.DB, query)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Duration = time.Since(start).Milliseconds()
+	return result, nil
 }

@@ -1,28 +1,91 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
+
+export interface SqlEditorHandle {
+  getSelectedOrCurrentStatement: () => string;
+  getFullText: () => string;
+  setFullText: (text: string) => void;
+}
 
 interface SqlEditorProps {
   value: string;
   onChange: (value: string) => void;
   onExecute?: () => void;
+  onExecuteAll?: () => void;
   language?: string;
 }
 
-export default function SqlEditor({ value, onChange, onExecute, language = 'sql' }: SqlEditorProps) {
+const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor(
+  { value, onChange, onExecute, onExecuteAll, language = 'sql' },
+  ref
+) {
   const editorRef = useRef<any>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onExecuteRef = useRef(onExecute);
+  onExecuteRef.current = onExecute;
+  const onExecuteAllRef = useRef(onExecuteAll);
+  onExecuteAllRef.current = onExecuteAll;
+
+  const getSelectedOrCurrentStatement = (): string => {
+    const editor = editorRef.current;
+    if (!editor) return valueRef.current;
+
+    const selection = editor.getSelection();
+    const model = editor.getModel();
+    if (!model) return valueRef.current;
+
+    const selectedText = model.getValueInRange(selection).trim();
+    if (selectedText) return selectedText;
+
+    const cursorPos = editor.getPosition();
+    const fullText = model.getValue();
+    const lines = fullText.split('\n');
+
+    const cursorLine = cursorPos.lineNumber - 1;
+
+    let startLine = cursorLine;
+    while (startLine > 0 && lines[startLine - 1].trim() !== '') {
+      startLine--;
+    }
+
+    let endLine = cursorLine;
+    while (endLine < lines.length - 1 && lines[endLine + 1].trim() !== '') {
+      endLine++;
+    }
+
+    const stmt = lines.slice(startLine, endLine + 1).join('\n').trim();
+    return stmt || fullText.trim();
+  };
+
+  useImperativeHandle(ref, () => ({
+    getSelectedOrCurrentStatement,
+    getFullText: () => editorRef.current?.getModel()?.getValue() || '',
+    setFullText: (text: string) => editorRef.current?.setValue(text),
+  }));
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
 
-    // Register Ctrl+Enter / Cmd+Enter keybinding inside Monaco
     editor.addAction({
       id: 'execute-query',
-      label: 'Execute Query',
+      label: 'Execute Query (Ctrl+Enter)',
       keybindings: [
-        2048 | 3, // Ctrl+Enter (Monaco.KeyMod.CtrlCmd | Monaco.KeyCode.Enter)
+        2048 | 3,
       ],
       run: () => {
-        onExecute?.();
+        onExecuteRef.current?.();
+      },
+    });
+
+    editor.addAction({
+      id: 'execute-all',
+      label: 'Execute All (Shift+Ctrl+Enter)',
+      keybindings: [
+        2048 | 1024 | 3,
+      ],
+      run: () => {
+        onExecuteAllRef.current?.();
       },
     });
 
@@ -35,7 +98,6 @@ export default function SqlEditor({ value, onChange, onExecute, language = 'sql'
     }
   };
 
-  // Sync external value changes
   useEffect(() => {
     const editor = editorRef.current;
     if (editor && editor.getValue() !== value) {
@@ -78,4 +140,6 @@ export default function SqlEditor({ value, onChange, onExecute, language = 'sql'
       />
     </div>
   );
-}
+});
+
+export default SqlEditor;

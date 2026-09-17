@@ -129,6 +129,44 @@ export namespace types {
 	        this.ExtraOptions = source["ExtraOptions"];
 	    }
 	}
+	export class DBFunc {
+	    Name: string;
+	    Schema: string;
+	    ReturnType: string;
+	    Comment: string;
+	    Definition: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DBFunc(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Schema = source["Schema"];
+	        this.ReturnType = source["ReturnType"];
+	        this.Comment = source["Comment"];
+	        this.Definition = source["Definition"];
+	    }
+	}
+	export class Procedure {
+	    Name: string;
+	    Schema: string;
+	    Comment: string;
+	    Definition: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Procedure(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Schema = source["Schema"];
+	        this.Comment = source["Comment"];
+	        this.Definition = source["Definition"];
+	    }
+	}
 	export class Project {
 	    Name: string;
 	    Description: string;
@@ -185,6 +223,22 @@ export namespace types {
 	        this.Duration = source["Duration"];
 	    }
 	}
+	export class SavedQuery {
+	    Name: string;
+	    Query: string;
+	    Connection: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SavedQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Query = source["Query"];
+	        this.Connection = source["Connection"];
+	    }
+	}
 	export class Table {
 	    Name: string;
 	    Schema: string;
@@ -199,6 +253,42 @@ export namespace types {
 	        this.Name = source["Name"];
 	        this.Schema = source["Schema"];
 	        this.Comment = source["Comment"];
+	    }
+	}
+	export class Trigger {
+	    Name: string;
+	    Table: string;
+	    Comment: string;
+	    Definition: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Trigger(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Table = source["Table"];
+	        this.Comment = source["Comment"];
+	        this.Definition = source["Definition"];
+	    }
+	}
+	export class View {
+	    Name: string;
+	    Schema: string;
+	    Comment: string;
+	    Definition: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new View(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Schema = source["Schema"];
+	        this.Comment = source["Comment"];
+	        this.Definition = source["Definition"];
 	    }
 	}
 

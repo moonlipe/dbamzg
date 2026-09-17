@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SaveProject } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
+import ColorPicker from '../ColorPicker/ColorPicker';
 
 interface ProjectDialogProps {
   isOpen: boolean;
@@ -8,11 +9,6 @@ interface ProjectDialogProps {
   onSave: () => void;
   editProject?: types.Project;
 }
-
-const PROJECT_COLORS = [
-  '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#f97316',
-  '#eab308', '#06b6d4', '#8b5cf6', '#f43f5e', '#14b8a6',
-];
 
 export default function ProjectDialog({ isOpen, onClose, onSave, editProject }: ProjectDialogProps) {
   const [name, setName] = useState('');
@@ -101,26 +97,7 @@ export default function ProjectDialog({ isOpen, onClose, onSave, editProject }: 
           </div>
 
           {/* Color */}
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Cor de Identificacao</label>
-            <div className="flex gap-2">
-              {PROJECT_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-7 h-7 rounded-full transition-all ${
-                    color === c
-                      ? 'ring-2 ring-offset-2 ring-offset-app-surface'
-                      : 'hover:scale-110'
-                  }`}
-                  style={{
-                    backgroundColor: c,
-                    boxShadow: color === c ? `0 0 0 2px #0f1117, 0 0 0 4px ${c}` : 'none',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+          <ColorPicker value={color} onChange={setColor} />
         </div>
 
         {/* Footer */}

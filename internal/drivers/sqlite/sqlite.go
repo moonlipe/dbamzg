@@ -239,6 +239,72 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 	return ddl, nil
 }
 
+// GetViews retorna as views de um schema.
+func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
+	log.Printf("[sqlite] Listando views...")
+	query := `SELECT name, sql FROM sqlite_master WHERE type='view' ORDER BY name`
+	rows, err := dbConn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.View
+	for rows.Next() {
+		var name, definition string
+		if err := rows.Scan(&name, &definition); err != nil {
+			return nil, err
+		}
+		views = append(views, types.View{
+			Name:       name,
+			Schema:     "main",
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[sqlite] %d views encontradas", len(views))
+	return views, nil
+}
+
+// GetProcedures retorna as stored procedures de um schema.
+// SQLite não suporta stored procedures.
+func (d *Driver) GetProcedures(dbConn *sql.DB, schema string) ([]types.Procedure, error) {
+	return []types.Procedure{}, nil
+}
+
+// GetFunctions retorna as functions de um schema.
+// SQLite não suporta user-defined functions no schema tradicional.
+func (d *Driver) GetFunctions(dbConn *sql.DB, schema string) ([]types.DBFunc, error) {
+	return []types.DBFunc{}, nil
+}
+
+// GetTriggers retorna os triggers de um schema.
+func (d *Driver) GetTriggers(dbConn *sql.DB, schema string) ([]types.Trigger, error) {
+	log.Printf("[sqlite] Listando triggers...")
+	query := `SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name`
+	rows, err := dbConn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.Trigger
+	for rows.Next() {
+		var name, tableName, definition string
+		if err := rows.Scan(&name, &tableName, &definition); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, types.Trigger{
+			Name:       name,
+			Table:      tableName,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[sqlite] %d triggers encontrados", len(triggers))
+	return triggers, nil
+}
+
 // ExecuteQuery executa uma query e retorna os resultados.
 func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult, error) {
 	// Detecta se é SELECT ou outro tipo de statement

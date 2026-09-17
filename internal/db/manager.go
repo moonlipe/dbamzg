@@ -168,6 +168,36 @@ func (cm *ConnectionManager) SaveConnection(config types.ConnectionConfig) error
 
 	config.Password = encryptedPassword
 
+	// Se ProjectID está definido, salva dentro do projeto
+	if config.ProjectID != "" {
+		project, err := cm.configMgr.GetProject(config.ProjectID)
+		if err != nil {
+			return fmt.Errorf("projeto '%s' nao encontrado: %w", config.ProjectID, err)
+		}
+
+		found := false
+		for i, c := range project.Connections {
+			if c.Name == config.Name {
+				project.Connections[i] = config
+				found = true
+				break
+			}
+		}
+		if !found {
+			project.Connections = append(project.Connections, config)
+		}
+
+		if err := cm.configMgr.AddProject(*project); err != nil {
+			return fmt.Errorf("erro ao salvar conexao no projeto: %w", err)
+		}
+
+		// Remove das conexoes avulsas se existir la
+		cm.configMgr.RemoveConnection(config.Name)
+
+		log.Printf("[manager] Conexao '%s' salva no projeto '%s'", config.Name, config.ProjectID)
+		return nil
+	}
+
 	if err := cm.configMgr.AddConnection(config); err != nil {
 		return fmt.Errorf("erro ao salvar conexao: %w", err)
 	}
@@ -187,12 +217,27 @@ func (cm *ConnectionManager) RemoveConnection(name string) error {
 		delete(cm.conns, name)
 	}
 
-	if err := cm.configMgr.RemoveConnection(name); err != nil {
-		return fmt.Errorf("erro ao remover conexao: %w", err)
+	// Tenta remover de conexões avulsas
+	if err := cm.configMgr.RemoveConnection(name); err == nil {
+		log.Printf("[manager] Conexao '%s' removida do disco", name)
+		return nil
 	}
 
-	log.Printf("[manager] Conexao '%s' removida do disco", name)
-	return nil
+	// Tenta remover de projetos
+	for _, project := range cm.configMgr.ListProjects() {
+		for i, c := range project.Connections {
+			if c.Name == name {
+				project.Connections = append(project.Connections[:i], project.Connections[i+1:]...)
+				if err := cm.configMgr.AddProject(project); err != nil {
+					return fmt.Errorf("erro ao salvar projeto: %w", err)
+				}
+				log.Printf("[manager] Conexao '%s' removida do projeto '%s'", name, project.Name)
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("conexao '%s' nao encontrada", name)
 }
 
 // SaveProject salva um projeto.
@@ -384,4 +429,30 @@ func (cm *ConnectionManager) GetTransactionMode(name string) (types.TransactionM
 	}
 
 	return conn.TxMode, nil
+}
+
+// --- Queries Salvas ---
+
+// SaveSavedQuery salva uma query.
+func (cm *ConnectionManager) SaveSavedQuery(q types.SavedQuery) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	return cm.configMgr.AddSavedQuery(q)
+}
+
+// RemoveSavedQuery remove uma query salva.
+func (cm *ConnectionManager) RemoveSavedQuery(name string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	return cm.configMgr.RemoveSavedQuery(name)
+}
+
+// GetSavedQueries retorna todas as queries salvas.
+func (cm *ConnectionManager) GetSavedQueries() []types.SavedQuery {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	return cm.configMgr.ListSavedQueries()
 }

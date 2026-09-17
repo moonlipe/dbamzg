@@ -71,6 +71,46 @@ type ForeignKey struct {
 	OnUpdate         string // Ação ao atualizar
 }
 
+// View representa uma view do banco de dados.
+type View struct {
+	Name       string // Nome da view
+	Schema     string // Schema ao qual pertence
+	Comment    string // Comentário/descrição
+	Definition string // Definição SQL da view
+}
+
+// Procedure representa uma stored procedure do banco de dados.
+type Procedure struct {
+	Name       string // Nome da procedure
+	Schema     string // Schema ao qual pertence
+	Comment    string // Comentário/descrição
+	Definition string // Definição SQL da procedure
+}
+
+// DBFunc representa uma function do banco de dados.
+type DBFunc struct {
+	Name       string // Nome da function
+	Schema     string // Schema ao qual pertence
+	ReturnType string // Tipo de retorno
+	Comment    string // Comentário/descrição
+	Definition string // Definição SQL da function
+}
+
+// Trigger representa um trigger do banco de dados.
+type Trigger struct {
+	Name       string // Nome do trigger
+	Table      string // Tabela associada
+	Comment    string // Comentário/descrição
+	Definition string // Definição SQL do trigger
+}
+
+// SavedQuery representa uma query salva pelo usuário.
+type SavedQuery struct {
+	Name       string `json:"Name"`
+	Query      string `json:"Query"`
+	Connection string `json:"Connection"`
+}
+
 // QueryResult armazena o resultado de uma query executada.
 type QueryResult struct {
 	Columns  []string        // Nomes das colunas
@@ -105,6 +145,18 @@ type Driver interface {
 
 	// GetDDL retorna o DDL (CREATE TABLE) de uma tabela
 	GetDDL(db *sql.DB, table string) (string, error)
+
+	// GetViews retorna as views de um schema
+	GetViews(db *sql.DB, schema string) ([]View, error)
+
+	// GetProcedures retorna as stored procedures de um schema
+	GetProcedures(db *sql.DB, schema string) ([]Procedure, error)
+
+	// GetFunctions retorna as functions de um schema
+	GetFunctions(db *sql.DB, schema string) ([]DBFunc, error)
+
+	// GetTriggers retorna os triggers de um schema
+	GetTriggers(db *sql.DB, schema string) ([]Trigger, error)
 
 	// ExecuteQuery executa uma query e retorna os resultados
 	ExecuteQuery(db *sql.DB, query string) (*QueryResult, error)

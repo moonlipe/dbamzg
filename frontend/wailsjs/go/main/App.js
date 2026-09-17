@@ -26,6 +26,10 @@ export function ExecuteQuery(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExecuteQuery'](arg1, arg2, arg3);
 }
 
+export function ExecuteQueryPaginated(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['ExecuteQueryPaginated'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function ExecuteQueryUnlimited(arg1, arg2) {
   return window['go']['main']['App']['ExecuteQueryUnlimited'](arg1, arg2);
 }
@@ -44,6 +48,14 @@ export function GetColumns(arg1, arg2) {
 
 export function GetDatabases(arg1) {
   return window['go']['main']['App']['GetDatabases'](arg1);
+}
+
+export function GetFunctions(arg1, arg2) {
+  return window['go']['main']['App']['GetFunctions'](arg1, arg2);
+}
+
+export function GetProcedures(arg1, arg2) {
+  return window['go']['main']['App']['GetProcedures'](arg1, arg2);
 }
 
 export function GetProject(arg1) {
@@ -66,6 +78,10 @@ export function GetSavedConnections() {
   return window['go']['main']['App']['GetSavedConnections']();
 }
 
+export function GetSavedQueries() {
+  return window['go']['main']['App']['GetSavedQueries']();
+}
+
 export function GetSchemas(arg1, arg2) {
   return window['go']['main']['App']['GetSchemas'](arg1, arg2);
 }
@@ -78,12 +94,24 @@ export function GetTransactionMode(arg1) {
   return window['go']['main']['App']['GetTransactionMode'](arg1);
 }
 
+export function GetTriggers(arg1, arg2) {
+  return window['go']['main']['App']['GetTriggers'](arg1, arg2);
+}
+
+export function GetViews(arg1, arg2) {
+  return window['go']['main']['App']['GetViews'](arg1, arg2);
+}
+
 export function RemoveConnection(arg1) {
   return window['go']['main']['App']['RemoveConnection'](arg1);
 }
 
 export function RemoveProject(arg1) {
   return window['go']['main']['App']['RemoveProject'](arg1);
+}
+
+export function RemoveSavedQuery(arg1) {
+  return window['go']['main']['App']['RemoveSavedQuery'](arg1);
 }
 
 export function ReplaceSQLVariables(arg1, arg2) {
@@ -100,6 +128,10 @@ export function SaveConnection(arg1) {
 
 export function SaveProject(arg1) {
   return window['go']['main']['App']['SaveProject'](arg1);
+}
+
+export function SaveSavedQuery(arg1) {
+  return window['go']['main']['App']['SaveSavedQuery'](arg1);
 }
 
 export function SearchQueryHistory(arg1) {

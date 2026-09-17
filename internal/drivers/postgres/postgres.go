@@ -311,6 +311,167 @@ GROUP BY t.table_schema, t.table_name`
 	return ddl, nil
 }
 
+// GetViews retorna as views de um schema.
+func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
+	if schema == "" {
+		schema = "public"
+	}
+
+	log.Printf("[postgres] Listando views do schema %s...", schema)
+	query := `SELECT table_name, 
+		pg_get_viewdef((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, true),
+		COALESCE(obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass), '')
+	FROM information_schema.tables
+	WHERE table_schema = $1 AND table_type = 'VIEW'
+	ORDER BY table_name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.View
+	for rows.Next() {
+		var name, definition string
+		var ns sql.NullString
+		if err := rows.Scan(&name, &definition, &ns); err != nil {
+			return nil, err
+		}
+		comment := ""
+		if ns.Valid {
+			comment = ns.String
+		}
+		views = append(views, types.View{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[postgres] %d views encontradas", len(views))
+	return views, nil
+}
+
+// GetProcedures retorna as stored procedures de um schema.
+func (d *Driver) GetProcedures(dbConn *sql.DB, schema string) ([]types.Procedure, error) {
+	if schema == "" {
+		schema = "public"
+	}
+
+	log.Printf("[postgres] Listando procedures do schema %s...", schema)
+	query := `SELECT p.proname AS name,
+		pg_get_functiondef(p.oid),
+		COALESCE(obj_description(p.oid, 'pg_proc'), '')
+	FROM pg_proc p
+	JOIN pg_namespace n ON p.pronamespace = n.oid
+	WHERE n.nspname = $1 AND p.prokind = 'p'
+	ORDER BY p.proname`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar procedures: %w", err)
+	}
+	defer rows.Close()
+
+	var procedures []types.Procedure
+	for rows.Next() {
+		var name, definition, comment string
+		if err := rows.Scan(&name, &definition, &comment); err != nil {
+			return nil, err
+		}
+		procedures = append(procedures, types.Procedure{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[postgres] %d procedures encontradas", len(procedures))
+	return procedures, nil
+}
+
+// GetFunctions retorna as functions de um schema.
+func (d *Driver) GetFunctions(dbConn *sql.DB, schema string) ([]types.DBFunc, error) {
+	if schema == "" {
+		schema = "public"
+	}
+
+	log.Printf("[postgres] Listando functions do schema %s...", schema)
+	query := `SELECT p.proname AS name,
+		pg_get_functiondef(p.oid),
+		pg_catalog.format_type(p.prorettype, NULL) AS return_type,
+		COALESCE(obj_description(p.oid, 'pg_proc'), '')
+	FROM pg_proc p
+	JOIN pg_namespace n ON p.pronamespace = n.oid
+	WHERE n.nspname = $1 AND p.prokind IN ('f', 'a')
+	ORDER BY p.proname`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunc
+	for rows.Next() {
+		var name, definition, returnType, comment string
+		if err := rows.Scan(&name, &definition, &returnType, &comment); err != nil {
+			return nil, err
+		}
+		functions = append(functions, types.DBFunc{
+			Name:       name,
+			Schema:     schema,
+			ReturnType: returnType,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[postgres] %d functions encontradas", len(functions))
+	return functions, nil
+}
+
+// GetTriggers retorna os triggers de um schema.
+func (d *Driver) GetTriggers(dbConn *sql.DB, schema string) ([]types.Trigger, error) {
+	if schema == "" {
+		schema = "public"
+	}
+
+	log.Printf("[postgres] Listando triggers do schema %s...", schema)
+	query := `SELECT t.tgname AS name,
+		c.relname AS table_name,
+		pg_get_triggerdef(t.oid),
+		COALESCE(obj_description(t.oid, 'pg_trigger'), '')
+	FROM pg_trigger t
+	JOIN pg_class c ON t.tgrelid = c.oid
+	JOIN pg_namespace n ON c.relnamespace = n.oid
+	WHERE n.nspname = $1
+	AND NOT t.tgisinternal
+	ORDER BY t.tgname`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.Trigger
+	for rows.Next() {
+		var name, tableName, definition, comment string
+		if err := rows.Scan(&name, &tableName, &definition, &comment); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, types.Trigger{
+			Name:       name,
+			Table:      tableName,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[postgres] %d triggers encontrados", len(triggers))
+	return triggers, nil
+}
+
 // ExecuteQuery executa uma query e retorna os resultados.
 func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult, error) {
 	queryType := strings.TrimSpace(strings.ToUpper(query))

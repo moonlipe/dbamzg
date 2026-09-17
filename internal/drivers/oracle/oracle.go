@@ -320,6 +320,147 @@ GROUP BY owner, table_name`
 	return ddl, nil
 }
 
+// GetViews retorna as views de um schema.
+func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
+	if schema == "" {
+		schema = strings.ToUpper(d.getCurrentUser(dbConn))
+	}
+
+	log.Printf("[oracle] Listando views do schema %s...", schema)
+	query := `SELECT view_name, text, NVL(comments, '') AS comment
+	FROM all_views v
+	LEFT JOIN all_tab_comments tc ON v.view_name = tc.table_name AND v.owner = tc.owner
+	WHERE v.owner = :1
+	ORDER BY v.view_name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.View
+	for rows.Next() {
+		var name, definition, comment string
+		if err := rows.Scan(&name, &definition, &comment); err != nil {
+			return nil, err
+		}
+		views = append(views, types.View{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[oracle] %d views encontradas", len(views))
+	return views, nil
+}
+
+// GetProcedures retorna as stored procedures de um schema.
+func (d *Driver) GetProcedures(dbConn *sql.DB, schema string) ([]types.Procedure, error) {
+	if schema == "" {
+		schema = strings.ToUpper(d.getCurrentUser(dbConn))
+	}
+
+	log.Printf("[oracle] Listando procedures do schema %s...", schema)
+	query := `SELECT procedure_name, NVL(comments, '') AS comment
+	FROM all_procedures p
+	LEFT JOIN all_tab_comments tc ON p.object_name = tc.table_name AND p.owner = tc.owner
+	WHERE p.owner = :1 AND p.object_type = 'PROCEDURE'
+	ORDER BY p.procedure_name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar procedures: %w", err)
+	}
+	defer rows.Close()
+
+	var procedures []types.Procedure
+	for rows.Next() {
+		var name, comment string
+		if err := rows.Scan(&name, &comment); err != nil {
+			return nil, err
+		}
+		procedures = append(procedures, types.Procedure{
+			Name:    name,
+			Schema:  schema,
+			Comment: comment,
+		})
+	}
+
+	log.Printf("[oracle] %d procedures encontradas", len(procedures))
+	return procedures, nil
+}
+
+// GetFunctions retorna as functions de um schema.
+func (d *Driver) GetFunctions(dbConn *sql.DB, schema string) ([]types.DBFunc, error) {
+	if schema == "" {
+		schema = strings.ToUpper(d.getCurrentUser(dbConn))
+	}
+
+	log.Printf("[oracle] Listando functions do schema %s...", schema)
+	query := `SELECT object_name AS name, 'FUNCTION' AS return_type, NVL(comments, '') AS comment
+	FROM all_objects o
+	LEFT JOIN all_tab_comments tc ON o.object_name = tc.table_name AND o.owner = tc.owner
+	WHERE o.owner = :1 AND o.object_type = 'FUNCTION'
+	ORDER BY o.object_name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunc
+	for rows.Next() {
+		var name, returnType, comment string
+		if err := rows.Scan(&name, &returnType, &comment); err != nil {
+			return nil, err
+		}
+		functions = append(functions, types.DBFunc{
+			Name:       name,
+			Schema:     schema,
+			ReturnType: returnType,
+			Comment:    comment,
+		})
+	}
+
+	log.Printf("[oracle] %d functions encontradas", len(functions))
+	return functions, nil
+}
+
+// GetTriggers retorna os triggers de um schema.
+func (d *Driver) GetTriggers(dbConn *sql.DB, schema string) ([]types.Trigger, error) {
+	if schema == "" {
+		schema = strings.ToUpper(d.getCurrentUser(dbConn))
+	}
+
+	log.Printf("[oracle] Listando triggers do schema %s...", schema)
+	query := `SELECT trigger_name, table_name, NVL(description, '') AS comment
+	FROM all_triggers
+	WHERE owner = :1
+	ORDER BY trigger_name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.Trigger
+	for rows.Next() {
+		var name, tableName, comment string
+		if err := rows.Scan(&name, &tableName, &comment); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, types.Trigger{
+			Name:    name,
+			Table:   tableName,
+			Comment: comment,
+		})
+	}
+
+	log.Printf("[oracle] %d triggers encontrados", len(triggers))
+	return triggers, nil
+}
+
 // ExecuteQuery executa uma query e retorna os resultados.
 func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult, error) {
 	log.Printf("[oracle] Executando query: %s", truncate(query, 200))

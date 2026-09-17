@@ -86,6 +86,16 @@ func (d *Driver) GetDatabases(dbConn *sql.DB) ([]string, error) {
 	return databases, nil
 }
 
+// getCurrentDatabase retorna o database atual.
+func (d *Driver) getCurrentDatabase(dbConn *sql.DB) string {
+	var currentDB string
+	err := dbConn.QueryRow("SELECT DATABASE()").Scan(&currentDB)
+	if err != nil {
+		return ""
+	}
+	return currentDB
+}
+
 // GetSchemas retorna os schemas (databases) de um banco.
 func (d *Driver) GetSchemas(dbConn *sql.DB, database string) ([]string, error) {
 	// MySQL não tem schemas separados, retorna o database atual
@@ -274,6 +284,145 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 		return "", fmt.Errorf("erro ao obter DDL: %w", err)
 	}
 	return ddl, nil
+}
+
+// GetViews retorna as views de um schema.
+func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
+	if schema == "" {
+		schema = d.getCurrentDatabase(dbConn)
+	}
+
+	log.Printf("[mysql] Listando views do banco %s...", schema)
+	query := `SELECT TABLE_NAME, ISNULL(TABLE_COMMENT, '') AS comment
+	FROM information_schema.TABLES
+	WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'VIEW'
+	ORDER BY TABLE_NAME`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.View
+	for rows.Next() {
+		var name, comment string
+		if err := rows.Scan(&name, &comment); err != nil {
+			return nil, err
+		}
+		views = append(views, types.View{
+			Name:    name,
+			Schema:  schema,
+			Comment: comment,
+		})
+	}
+
+	log.Printf("[mysql] %d views encontradas", len(views))
+	return views, nil
+}
+
+// GetProcedures retorna as stored procedures de um schema.
+func (d *Driver) GetProcedures(dbConn *sql.DB, schema string) ([]types.Procedure, error) {
+	if schema == "" {
+		schema = d.getCurrentDatabase(dbConn)
+	}
+
+	log.Printf("[mysql] Listando procedures do banco %s...", schema)
+	query := `SELECT ROUTINE_NAME, ROUTINE_DEFINITION, COALESCE(ROUTINE_COMMENT, '') AS comment
+	FROM information_schema.ROUTINES
+	WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE'
+	ORDER BY ROUTINE_NAME`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar procedures: %w", err)
+	}
+	defer rows.Close()
+
+	var procedures []types.Procedure
+	for rows.Next() {
+		var name, definition, comment string
+		if err := rows.Scan(&name, &definition, &comment); err != nil {
+			return nil, err
+		}
+		procedures = append(procedures, types.Procedure{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[mysql] %d procedures encontradas", len(procedures))
+	return procedures, nil
+}
+
+// GetFunctions retorna as functions de um schema.
+func (d *Driver) GetFunctions(dbConn *sql.DB, schema string) ([]types.DBFunc, error) {
+	if schema == "" {
+		schema = d.getCurrentDatabase(dbConn)
+	}
+
+	log.Printf("[mysql] Listando functions do banco %s...", schema)
+	query := `SELECT ROUTINE_NAME, ROUTINE_DEFINITION, DATA_TYPE AS return_type, COALESCE(ROUTINE_COMMENT, '') AS comment
+	FROM information_schema.ROUTINES
+	WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION'
+	ORDER BY ROUTINE_NAME`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunc
+	for rows.Next() {
+		var name, definition, returnType, comment string
+		if err := rows.Scan(&name, &definition, &returnType, &comment); err != nil {
+			return nil, err
+		}
+		functions = append(functions, types.DBFunc{
+			Name:       name,
+			Schema:     schema,
+			ReturnType: returnType,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[mysql] %d functions encontradas", len(functions))
+	return functions, nil
+}
+
+// GetTriggers retorna os triggers de um schema.
+func (d *Driver) GetTriggers(dbConn *sql.DB, schema string) ([]types.Trigger, error) {
+	if schema == "" {
+		schema = d.getCurrentDatabase(dbConn)
+	}
+
+	log.Printf("[mysql] Listando triggers do banco %s...", schema)
+	query := `SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE AS table_name, ACTION_STATEMENT AS definition
+	FROM information_schema.TRIGGERS
+	WHERE TRIGGER_SCHEMA = ?
+	ORDER BY TRIGGER_NAME`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.Trigger
+	for rows.Next() {
+		var name, tableName, definition string
+		if err := rows.Scan(&name, &tableName, &definition); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, types.Trigger{
+			Name:       name,
+			Table:      tableName,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[mysql] %d triggers encontrados", len(triggers))
+	return triggers, nil
 }
 
 // ExecuteQuery executa uma query e retorna os resultados.

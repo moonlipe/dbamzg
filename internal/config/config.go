@@ -13,8 +13,9 @@ import (
 
 // Config representa a configuração do aplicativo.
 type Config struct {
-	Projects    []types.Project        `json:"projects"`
-	Connections []types.ConnectionConfig `json:"connections"` // Conexões avulsas (sem projeto)
+	Projects     []types.Project        `json:"projects"`
+	Connections  []types.ConnectionConfig `json:"connections"` // Conexões avulsas (sem projeto)
+	SavedQueries []types.SavedQuery     `json:"saved_queries"`
 }
 
 // Manager gerencia a configuração do app.
@@ -50,6 +51,9 @@ func NewManager() (*Manager, error) {
 		}
 	}
 
+	// Deduplica: remove conexoes avulsas que ja existem em projetos
+	m.deduplicateConnections()
+
 	return m, nil
 }
 
@@ -71,6 +75,30 @@ func (m *Manager) Save() error {
 	}
 
 	return os.WriteFile(m.configFile, data, 0644)
+}
+
+// deduplicateConnections remove conexoes avulsas que ja existem dentro de projetos.
+func (m *Manager) deduplicateConnections() {
+	// Coleta nomes de conexoes que ja existem em projetos
+	inProject := make(map[string]bool)
+	for _, p := range m.Config.Projects {
+		for _, c := range p.Connections {
+			inProject[c.Name] = true
+		}
+	}
+
+	// Remove avulsas duplicadas
+	var filtered []types.ConnectionConfig
+	for _, c := range m.Config.Connections {
+		if !inProject[c.Name] {
+			filtered = append(filtered, c)
+		}
+	}
+
+	if len(filtered) != len(m.Config.Connections) {
+		m.Config.Connections = filtered
+		m.Save()
+	}
 }
 
 // --- Projetos ---
@@ -172,4 +200,36 @@ func (m *Manager) GetAllConnections() []types.ConnectionConfig {
 	all = append(all, m.Config.Connections...)
 
 	return all
+}
+
+// --- Queries Salvas ---
+
+// AddSavedQuery adiciona ou atualiza uma query salva (pelo nome).
+func (m *Manager) AddSavedQuery(q types.SavedQuery) error {
+	for i, sq := range m.Config.SavedQueries {
+		if sq.Name == q.Name {
+			m.Config.SavedQueries[i] = q
+			return m.Save()
+		}
+	}
+
+	m.Config.SavedQueries = append(m.Config.SavedQueries, q)
+	return m.Save()
+}
+
+// RemoveSavedQuery remove uma query salva pelo nome.
+func (m *Manager) RemoveSavedQuery(name string) error {
+	for i, sq := range m.Config.SavedQueries {
+		if sq.Name == name {
+			m.Config.SavedQueries = append(m.Config.SavedQueries[:i], m.Config.SavedQueries[i+1:]...)
+			return m.Save()
+		}
+	}
+
+	return fmt.Errorf("query salva '%s' nao encontrada", name)
+}
+
+// ListSavedQueries retorna todas as queries salvas.
+func (m *Manager) ListSavedQueries() []types.SavedQuery {
+	return m.Config.SavedQueries
 }

@@ -3,6 +3,7 @@
 package sqlserver
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -30,7 +31,7 @@ func (d *Driver) Connect(config types.ConnectionConfig) (*sql.DB, error) {
 
 	// Constrói a connection string
 	dsn := fmt.Sprintf(
-		"server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=%s;connection timeout=10; packet size=4096",
+		"server=%s;user id=%s;password=%s;port=%d;database=%s;encrypt=%s;connection timeout=30; packet size=4096",
 		config.Host,
 		config.User,
 		config.Password,
@@ -338,6 +339,176 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 	return ddl, nil
 }
 
+// GetViews retorna as views de um schema.
+func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
+	if schema == "" {
+		schema = "dbo"
+	}
+
+	log.Printf("[sqlserver] Listando views do schema %s...", schema)
+	query := `SELECT v.name, ISNULL(OBJECT_DEFINITION(v.object_id), ''), ISNULL(ep.value, '') 
+	FROM sys.views v
+	LEFT JOIN sys.extended_properties ep 
+		ON ep.major_id = v.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+	WHERE SCHEMA_NAME(v.schema_id) = @p1
+	ORDER BY v.name`
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	rows, err := dbConn.QueryContext(ctx, query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.View
+	for rows.Next() {
+		var name, definition, comment string
+		if err := rows.Scan(&name, &definition, &comment); err != nil {
+			return nil, err
+		}
+		views = append(views, types.View{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[sqlserver] %d views encontradas", len(views))
+	return views, nil
+}
+
+// GetProcedures retorna as stored procedures de um schema.
+func (d *Driver) GetProcedures(dbConn *sql.DB, schema string) ([]types.Procedure, error) {
+	if schema == "" {
+		schema = "dbo"
+	}
+
+	log.Printf("[sqlserver] Listando procedures do schema %s...", schema)
+	query := `SELECT p.name, ISNULL(OBJECT_DEFINITION(p.object_id), ''), ISNULL(ep.value, '') 
+	FROM sys.procedures p
+	LEFT JOIN sys.extended_properties ep 
+		ON ep.major_id = p.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+	WHERE SCHEMA_NAME(p.schema_id) = @p1
+	ORDER BY p.name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar procedures: %w", err)
+	}
+	defer rows.Close()
+
+	var procedures []types.Procedure
+	for rows.Next() {
+		var name, definition, comment string
+		if err := rows.Scan(&name, &definition, &comment); err != nil {
+			return nil, err
+		}
+		procedures = append(procedures, types.Procedure{
+			Name:       name,
+			Schema:     schema,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[sqlserver] %d procedures encontradas", len(procedures))
+	return procedures, nil
+}
+
+// GetFunctions retorna as functions de um schema.
+func (d *Driver) GetFunctions(dbConn *sql.DB, schema string) ([]types.DBFunc, error) {
+	if schema == "" {
+		schema = "dbo"
+	}
+
+	log.Printf("[sqlserver] Listando functions do schema %s...", schema)
+	query := `SELECT o.name, 
+		ISNULL(OBJECT_DEFINITION(o.object_id), ''),
+		ISNULL(ep.value, '')
+	FROM sys.objects o
+	LEFT JOIN sys.extended_properties ep 
+		ON ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+	WHERE o.type IN ('FN', 'IF', 'TF')
+	AND SCHEMA_NAME(o.schema_id) = @p1
+	ORDER BY o.name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunc
+	for rows.Next() {
+		var name, def, comment string
+		if err := rows.Scan(&name, &def, &comment); err != nil {
+			return nil, err
+		}
+		returnType := "unknown"
+		if strings.Contains(strings.ToUpper(def), "RETURNS @") {
+			returnType = "TABLE"
+		} else if strings.Contains(strings.ToUpper(def), "RETURNS ") {
+			parts := strings.Split(strings.ToUpper(def), "RETURNS ")
+			if len(parts) > 1 {
+				returnType = strings.TrimSpace(parts[1])
+				if idx := strings.Index(returnType, " "); idx > 0 {
+					returnType = returnType[:idx]
+				}
+			}
+		}
+		functions = append(functions, types.DBFunc{
+			Name:       name,
+			Schema:     schema,
+			ReturnType: returnType,
+			Comment:    comment,
+			Definition: def,
+		})
+	}
+
+	log.Printf("[sqlserver] %d functions encontradas", len(functions))
+	return functions, nil
+}
+
+// GetTriggers retorna os triggers de um schema.
+func (d *Driver) GetTriggers(dbConn *sql.DB, schema string) ([]types.Trigger, error) {
+	if schema == "" {
+		schema = "dbo"
+	}
+
+	log.Printf("[sqlserver] Listando triggers do schema %s...", schema)
+	query := `SELECT t.name, 
+		OBJECT_NAME(t.parent_id) AS table_name,
+		ISNULL(OBJECT_DEFINITION(t.object_id), ''),
+		ISNULL(ep.value, '')
+	FROM sys.triggers t
+	LEFT JOIN sys.extended_properties ep 
+		ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+	WHERE SCHEMA_NAME(t.schema_id) = @p1
+	AND t.is_ms_shipped = 0
+	ORDER BY t.name`
+	rows, err := dbConn.Query(query, schema)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao listar triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.Trigger
+	for rows.Next() {
+		var name, tableName, definition, comment string
+		if err := rows.Scan(&name, &tableName, &definition, &comment); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, types.Trigger{
+			Name:       name,
+			Table:      tableName,
+			Comment:    comment,
+			Definition: definition,
+		})
+	}
+
+	log.Printf("[sqlserver] %d triggers encontrados", len(triggers))
+	return triggers, nil
+}
+
 // ExecuteQuery executa uma query e retorna os resultados.
 func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult, error) {
 	log.Printf("[sqlserver] Executando query: %s", truncate(query, 200))
@@ -368,7 +539,9 @@ func (d *Driver) ExecuteQuery(dbConn *sql.DB, query string) (*types.QueryResult,
 
 // executeQuerySelect executa queries SELECT.
 func (d *Driver) executeQuerySelect(dbConn *sql.DB, query string) (*types.QueryResult, error) {
-	rows, err := dbConn.Query(query)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	rows, err := dbConn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao executar query: %w", err)
 	}
