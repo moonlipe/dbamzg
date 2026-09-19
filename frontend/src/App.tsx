@@ -330,6 +330,14 @@ function App() {
       }
       updateTab(targetId, initPatch);
 
+      // Reset all grid selections
+      setSelectedRows(new Set());
+      setSelectedColumns(new Set());
+      setSelectedCells(new Set());
+      setFocusedCell(null);
+      setEditingCell(null);
+      setEditedCells(new Map());
+
       const res = await ExecuteQueryPaginated(conn, queryToRun, 0, ROW_LIMIT, transactionMode);
 
       const hasMore = res.RowCount >= ROW_LIMIT;
