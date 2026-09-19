@@ -4,6 +4,7 @@ import {
   GetSavedConnections,
   Connect,
   Disconnect,
+  TestConnection,
   ExecuteQuery,
   ExecuteQueryUnlimited,
   RemoveConnection,
@@ -19,15 +20,18 @@ import {
   ExecuteQueryPaginated,
   ExtractSQLVariables,
   ReplaceSQLVariables,
+  ExportProject,
+  ImportProject,
 } from '../wailsjs/go/main/App';
 import { types, sqlvariables } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
-import { Folder, ChevronRight, Database, Settings } from 'lucide-react';
+import { Folder, ChevronRight, Database, Settings, PanelLeftClose, PanelLeft, Unplug } from 'lucide-react';
 import ConnectionDialog from './components/ConnectionDialog/ConnectionDialog';
 import ProjectDialog from './components/ProjectDialog/ProjectDialog';
 import SqlEditor, { SqlEditorHandle } from './components/SqlEditor/SqlEditor';
 import VariableModal from './components/VariableModal/VariableModal';
 import SettingsModal, { AppSettings } from './components/SettingsModal/SettingsModal';
+import ContextMenu, { ContextMenuItem } from './components/ContextMenu/ContextMenu';
 
 // --- Grid Feature Types ---
 interface CellPos {
@@ -124,6 +128,19 @@ function App() {
   const [savedQueries, setSavedQueries] = useState<types.SavedQuery[]>([]);
   const [isSavedQueriesOpen, setIsSavedQueriesOpen] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [connContextMenu, setConnContextMenu] = useState<{ x: number; y: number; conn: types.ConnectionConfig } | null>(null);
+  const [projContextMenu, setProjContextMenu] = useState<{ x: number; y: number; project: types.Project } | null>(null);
+  const [copySpecialOpen, setCopySpecialOpen] = useState(false);
+  const [copySpecialConfig, setCopySpecialConfig] = useState({
+    includeHeaders: true,
+    delimiter: '\t',
+    customDelimiter: '',
+    quoteStrings: false,
+  });
 
   // --- SQL Variables ---
   const [variableModalOpen, setVariableModalOpen] = useState(false);
@@ -135,8 +152,8 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('amzg-settings');
-      return saved ? JSON.parse(saved) : { executeMode: 'statement', statementDelimiter: 'blank_line', autoExpandProject: false, confirmOnDelete: true, fontSize: 13 };
-    } catch { return { executeMode: 'statement', statementDelimiter: 'blank_line', autoExpandProject: false, confirmOnDelete: true, fontSize: 13 }; }
+      return saved ? JSON.parse(saved) : { executeMode: 'statement', statementDelimiter: 'blank_line', autoExpandProject: false, confirmOnDelete: true, fontSize: 13, uiFontSize: 12 };
+    } catch { return { executeMode: 'statement', statementDelimiter: 'blank_line', autoExpandProject: false, confirmOnDelete: true, fontSize: 13, uiFontSize: 12 }; }
   });
 
   // --- Editor Ref ---
@@ -144,6 +161,8 @@ function App() {
 
   // --- Grid Feature States ---
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set());
+  const [lastSelectedCol, setLastSelectedCol] = useState<number | null>(null);
   const [editingCell, setEditingCell] = useState<CellPos | null>(null);
   const [editValue, setEditValue] = useState('');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -226,6 +245,10 @@ function App() {
 
   const handleConnect = async (config: types.ConnectionConfig) => {
     try {
+      // Disconnect previous connection if any
+      if (activeConnectionRef.current && activeConnectionRef.current !== config.Name) {
+        try { await Disconnect(activeConnectionRef.current); } catch (_) {}
+      }
       await Connect(config);
       setActiveConnection(config.Name);
       updateTab(activeTabId, { connection: config.Name, error: null });
@@ -286,9 +309,12 @@ function App() {
 
       const hasMore = res.RowCount >= ROW_LIMIT;
       const resultPatch: Partial<Tab> = { result: res, error: null, offset: ROW_LIMIT, hasMoreRows: hasMore };
-      if (isDML || isDDL) {
+      if (transactionMode === 'manual') {
         resultPatch.hasChanges = true;
-        if (transactionMode === 'manual') {
+        resultPatch.pendingTransactions = (tabsRef.current.find((t) => t.id === targetId)?.pendingTransactions || 0) + 1;
+      } else if (isDML || isDDL) {
+        resultPatch.hasChanges = true;
+        if (transactionMode === 'smartcommit' && isDML) {
           resultPatch.pendingTransactions = (tabsRef.current.find((t) => t.id === targetId)?.pendingTransactions || 0) + 1;
         }
       }
@@ -329,7 +355,7 @@ function App() {
       return;
     }
 
-    const vars = await ExtractSQLVariables(queryToRun);
+    const vars = await ExtractSQLVariables(queryToRun) || [];
     if (vars.length > 0) {
       setDetectedVariables(vars);
       setPendingQuery({ query: queryToRun, conn });
@@ -338,6 +364,7 @@ function App() {
     }
 
     await executeSQL(queryToRun, conn, targetId);
+    editorRef.current?.focus();
   };
 
   const handleExecuteAll = async (tabId?: string) => {
@@ -364,7 +391,7 @@ function App() {
       return;
     }
 
-    const vars = await ExtractSQLVariables(queryToRun);
+    const vars = await ExtractSQLVariables(queryToRun) || [];
     if (vars.length > 0) {
       setDetectedVariables(vars);
       setPendingQuery({ query: queryToRun, conn });
@@ -373,6 +400,7 @@ function App() {
     }
 
     await executeSQL(queryToRun, conn, targetId);
+    editorRef.current?.focus();
   };
 
   const handleVariableExecute = async (values: Record<string, string>) => {
@@ -380,6 +408,7 @@ function App() {
     const replaced = await ReplaceSQLVariables(pendingQuery.query, values);
     await executeSQL(replaced, pendingQuery.conn, activeTabIdRef.current);
     setPendingQuery(null);
+    editorRef.current?.focus();
   };
 
   const handleLoadMore = async () => {
@@ -403,6 +432,7 @@ function App() {
 
       const mergedResult: types.QueryResult = {
         Columns: res.Columns || tab.result?.Columns || [],
+        ColumnTypes: res.ColumnTypes || tab.result?.ColumnTypes || [],
         Rows: newRows,
         RowCount: totalCount,
         Message: res.Message,
@@ -465,15 +495,51 @@ function App() {
     }
   };
 
+  const handleQuickSave = async () => {
+    const existingNames = savedQueries.map((sq) => sq.Name);
+    if (activeTab.title && existingNames.includes(activeTab.title)) {
+      const conn = activeTab.connection || activeConnectionRef || '';
+      const connName = typeof conn === 'string' ? conn : '';
+      try {
+        const sq: types.SavedQuery = { Name: activeTab.title, Query: activeTab.query, Connection: connName };
+        await SaveSavedQuery(sq);
+        await loadSavedQueries();
+      } catch (err) {
+        console.error('Erro ao salvar query:', err);
+      }
+    } else {
+      handleSaveQuery();
+    }
+  };
+
   const handleLoadSavedQuery = (sq: types.SavedQuery) => {
-    updateTab(activeTabId, { query: sq.Query, title: sq.Name });
+    const existing = tabs.find((t) => t.title === sq.Name);
+    if (existing) {
+      setActiveTabId(existing.id);
+      if (sq.Connection && sq.Connection !== activeConnection) {
+        setActiveConnection(sq.Connection);
+        const connObj = [...projects.flatMap((p) => p.Connections || []), ...connections].find(
+          (c) => c.Name === sq.Connection
+        );
+        if (connObj) handleConnect(connObj);
+      }
+      setIsSavedQueriesOpen(false);
+      return;
+    }
+
+    const conn = sq.Connection || activeConnection || '';
+    const newTab = createTab(conn);
+    newTab.query = sq.Query;
+    newTab.title = sq.Name;
+    newTab.originalQuery = sq.Query;
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
     if (sq.Connection && sq.Connection !== activeConnection) {
-      const conn = [...projects.flatMap((p) => p.Connections || []), ...connections].find(
+      setActiveConnection(sq.Connection);
+      const connObj = [...projects.flatMap((p) => p.Connections || []), ...connections].find(
         (c) => c.Name === sq.Connection
       );
-      if (conn) {
-        handleConnect(conn);
-      }
+      if (connObj) handleConnect(connObj);
     }
     setIsSavedQueriesOpen(false);
   };
@@ -517,6 +583,23 @@ function App() {
     setActiveTabId(newTab.id);
   };
 
+  const handleOpenQueryFromTree = (query: string) => {
+    const newTab = createTab(activeConnection);
+    newTab.query = query;
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
+  const handleShowDefinition = (name: string, type: string) => {
+    const conn = activeTab.connection || activeConnection;
+    if (!conn) return;
+    const newTab = createTab(conn);
+    newTab.query = `-- Definition: ${name} (${type})`;
+    newTab.title = name;
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
   const handleEditConnection = (conn: types.ConnectionConfig) => {
     setEditingConfig(conn);
     setIsDialogOpen(true);
@@ -547,6 +630,42 @@ function App() {
     }
   };
 
+  const handleExportProject = async (name: string) => {
+    try {
+      const json = await ExportProject(name);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name + '.amzg-proj';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Projeto exportado com sucesso', 'success');
+    } catch (err) {
+      showToast(`Erro ao exportar: ${err}`, 'error');
+    }
+  };
+
+  const handleImportProject = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.amzg-proj';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await ImportProject(text);
+        loadProjects();
+        loadConnections();
+        showToast('Projeto importado com sucesso', 'success');
+      } catch (err) {
+        showToast(`Erro ao importar: ${err}`, 'error');
+      }
+    };
+    input.click();
+  };
+
   // --- Grid Feature Handlers ---
 
   const handleRowClick = (rowIdx: number, e: React.MouseEvent) => {
@@ -571,6 +690,7 @@ function App() {
       });
     } else {
       setSelectedRows(new Set([rowIdx]));
+      setSelectedColumns(new Set());
     }
     lastSelectedRow.current = rowIdx;
   };
@@ -583,6 +703,71 @@ function App() {
 
   const handleCellClick = (rowIdx: number, colIdx: number) => {
     setFocusedCell({ rowIdx, colIdx });
+    setSelectedRows(new Set());
+    setSelectedColumns(new Set());
+  };
+
+  const handleColumnClick = (colIdx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedColumns((prev) => {
+        const next = new Set(prev);
+        if (next.has(colIdx)) next.delete(colIdx);
+        else next.add(colIdx);
+        return next;
+      });
+    } else if (e.shiftKey && lastSelectedCol !== null) {
+      const start = Math.min(lastSelectedCol, colIdx);
+      const end = Math.max(lastSelectedCol, colIdx);
+      setSelectedColumns((prev) => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) next.add(i);
+        return next;
+      });
+    } else {
+      setSelectedColumns(new Set([colIdx]));
+      setSelectedRows(new Set());
+    }
+    setLastSelectedCol(colIdx);
+  };
+
+  const getCopyDelimiter = () => {
+    if (copySpecialConfig.delimiter === 'custom') return copySpecialConfig.customDelimiter;
+    return copySpecialConfig.delimiter;
+  };
+
+  const handleCopySpecial = () => {
+    if (!activeTab.result) return;
+    const delimiter = getCopyDelimiter();
+    const rows = activeTab.result.Rows || [];
+    const cols = activeTab.result.Columns || [];
+    const lines: string[] = [];
+
+    if (copySpecialConfig.includeHeaders) {
+      lines.push(cols.join(delimiter));
+    }
+
+    const rowIndices = selectedRows.size > 0
+      ? Array.from(selectedRows).sort((a, b) => a - b)
+      : rows.map((_, i) => i);
+
+    for (const i of rowIndices) {
+      const row = rows[i];
+      if (!row) continue;
+      const cells = row.map((c) => {
+        if (c === null || c === undefined) return 'NULL';
+        const s = String(c);
+        if (copySpecialConfig.quoteStrings && typeof c === 'string') {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      });
+      lines.push(cells.join(delimiter));
+    }
+
+    copyToClipboard(lines.join('\n'));
+    showToast('Dados copiados (formato especial)', 'success');
+    setCopySpecialOpen(false);
   };
 
   const saveEdit = async () => {
@@ -716,6 +901,7 @@ function App() {
     if (!contextMenu || !activeTab.result) return;
     const val = activeTab.result.Rows?.[contextMenu.rowIdx]?.[contextMenu.colIdx];
     copyToClipboard(val !== null && val !== undefined ? String(val) : '');
+    showToast('Celula copiada', 'success');
     setContextMenu(null);
   };
 
@@ -723,6 +909,7 @@ function App() {
     if (!contextMenu || !activeTab.result) return;
     const row = activeTab.result.Rows?.[contextMenu.rowIdx];
     if (row) copyToClipboard(row.map((c) => (c === null ? 'NULL' : String(c))).join('\t'));
+    showToast('Linha copiada', 'success');
     setContextMenu(null);
   };
 
@@ -735,6 +922,7 @@ function App() {
         return row ? row.map((c) => (c === null ? 'NULL' : String(c))).join('\t') : '';
       });
     copyToClipboard(lines.join('\n'));
+    showToast(`${selectedRows.size} linhas copiadas`, 'success');
     setContextMenu(null);
   };
 
@@ -752,6 +940,7 @@ function App() {
       return `'${String(v).replace(/'/g, "''")}'`;
     }).join(', ');
     copyToClipboard(`INSERT INTO ${tn} (${colList}) VALUES (${valList});`);
+    showToast('INSERT copiado', 'success');
     setContextMenu(null);
   };
 
@@ -770,6 +959,7 @@ function App() {
         return row ? row.map((c) => (c === null ? 'NULL' : String(c))).join('\t') : '';
       });
     copyToClipboard(lines.join('\n'));
+    showToast(`${selectedRows.size} linhas copiadas`, 'success');
   };
 
   const handleCopySelectedAsInsertToolbar = () => {
@@ -792,6 +982,7 @@ function App() {
         return `INSERT INTO ${tn} (${colList}) VALUES (${valList});`;
       });
     copyToClipboard(inserts.join('\n'));
+    showToast(`${selectedRows.size} INSERTs copiados`, 'success');
   };
 
   // --- Context Menu ---
@@ -800,44 +991,81 @@ function App() {
     setContextMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx });
   };
 
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    document.addEventListener('click', handler);
-    document.addEventListener('contextmenu', handler);
-    return () => {
-      document.removeEventListener('click', handler);
-      document.removeEventListener('contextmenu', handler);
-    };
-  }, [contextMenu]);
-
-  // --- Ctrl+C keyboard shortcut ---
+  // --- Grid keyboard shortcuts ---
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        const sel = window.getSelection()?.toString();
-        if (sel) return; // let native copy work for text selection
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl) return;
 
-        if (selectedRows.size > 0) {
+      // Ctrl+Shift+C → special copy dialog
+      if (e.shiftKey && e.key === 'C') {
+        if (activeTab.result && activeTab.result.Rows && activeTab.result.Rows.length > 0) {
+          e.preventDefault();
+          setCopySpecialOpen(true);
+        }
+        return;
+      }
+
+      // Ctrl+C → copy
+      if (e.key === 'c' && !e.shiftKey) {
+        const sel = window.getSelection()?.toString();
+        if (sel) return;
+
+        if (selectedColumns.size > 0 && activeTab.result) {
+          e.preventDefault();
+          const cols = activeTab.result.Columns || [];
+          const rows = activeTab.result.Rows || [];
+          const colIndices = Array.from(selectedColumns).sort((a, b) => a - b);
+          const lines = rows.map((row) => colIndices.map((ci) => row[ci] === null ? 'NULL' : String(row[ci])).join('\t'));
+          copyToClipboard(lines.join('\n'));
+          showToast(`${selectedColumns.size} colunas copiadas`, 'success');
+        } else if (selectedRows.size > 0) {
           e.preventDefault();
           handleCopySelectedRows();
         } else if (focusedCell && activeTab.result) {
           e.preventDefault();
           const val = activeTab.result.Rows?.[focusedCell.rowIdx]?.[focusedCell.colIdx];
           copyToClipboard(val !== null && val !== undefined ? String(val) : '');
+          showToast('Celula copiada', 'success');
+        }
+        return;
+      }
+
+      // Ctrl+A → select all rows
+      if (e.key === 'a' && !e.shiftKey) {
+        if (activeTab.result?.Rows && activeTab.result.Rows.length > 0) {
+          e.preventDefault();
+          setSelectedRows(new Set(activeTab.result.Rows.map((_, i) => i)));
         }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedRows, focusedCell, activeTab.result]);
+  }, [selectedRows, selectedColumns, focusedCell, activeTab.result]);
 
   // --- Auto-detect table name from query ---
   useEffect(() => {
     const tn = extractTableName(activeTab.query);
     setTableName(tn);
   }, [activeTab.query]);
+
+  // F3 para abrir queries salvas
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F3') {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsSavedQueriesOpen(true);
+      }
+      if (e.key === 'F2' && !renamingTabId) {
+        e.preventDefault();
+        e.stopPropagation();
+        startRenameTab(activeTabIdRef.current);
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [renamingTabId]);
 
   // --- Edit cell value display ---
   const getCellDisplayValue = (rowIdx: number, colIdx: number, originalValue: any): any => {
@@ -880,8 +1108,54 @@ function App() {
     });
   };
 
+  const handleCloseOtherTabs = (id: string) => {
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id === id);
+      if (!prev.find((t) => t.id === activeTabId && t.id === id)) {
+        setActiveTabId(id);
+      }
+      return next;
+    });
+  };
+
+  const handleCloseRightTabs = (id: string) => {
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      const next = prev.slice(0, idx + 1);
+      if (!next.find((t) => t.id === activeTabId)) {
+        setActiveTabId(id);
+      }
+      return next;
+    });
+  };
+
+  const handleDuplicateTab = (id: string) => {
+    const src = tabs.find((t) => t.id === id);
+    if (!src) return;
+    const dup = createTab(src.connection);
+    dup.query = src.query;
+    dup.title = src.title + ' (cópia)';
+    dup.originalQuery = src.originalQuery;
+    setTabs((prev) => [...prev, dup]);
+    setActiveTabId(dup.id);
+  };
+
+  const startRenameTab = (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    setRenamingTabId(id);
+    setRenameValue(tab.title);
+  };
+
+  const confirmRenameTab = () => {
+    if (renamingTabId && renameValue.trim()) {
+      updateTab(renamingTabId, { title: renameValue.trim() });
+    }
+    setRenamingTabId(null);
+  };
+
   return (
-    <div className="h-screen flex flex-col bg-app-bg text-zinc-100 select-none">
+    <div className="h-screen flex flex-col bg-app-bg text-zinc-100 select-none" style={{ fontSize: settings.uiFontSize + 'px' }}>
       {/* Header */}
       <header className="h-10 bg-app-surface border-b border-app-border flex items-center px-3 shrink-0">
         <div className="flex items-center gap-2">
@@ -898,6 +1172,13 @@ function App() {
           <div className="flex items-center gap-2 text-xs">
             <div className="w-2 h-2 rounded-full bg-accent-green" />
             <span className="text-zinc-400 text-xs">{activeConnection}</span>
+            <button
+              onClick={handleDisconnect}
+              className="w-5 h-5 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 transition-colors"
+              title="Desconectar"
+            >
+              <Unplug size={12} />
+            </button>
           </div>
         )}
         <button
@@ -911,157 +1192,196 @@ function App() {
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
-        <aside className="w-60 bg-app-surface border-r border-app-border flex flex-col shrink-0">
-          <div className="h-10 px-2 flex items-center justify-between border-b border-app-border">
-            <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Database</span>
-            <div className="flex items-center gap-1">
+        <aside className={`${sidebarCollapsed ? 'w-10' : 'w-60'} bg-app-surface border-r border-app-border flex flex-col shrink-0 transition-all duration-200 overflow-hidden`}>
+          <div className="flex items-center justify-between border-b border-app-border shrink-0 h-10">
+            {!sidebarCollapsed && (
+              <span className="text-[0.83em] font-medium text-zinc-500 uppercase tracking-wider pl-2">Database</span>
+            )}
+            <div className={`flex items-center gap-1 ${sidebarCollapsed ? 'px-1.5' : 'pr-2'}`}>
               <button
-                onClick={() => { setEditingProject(null); setIsProjectDialogOpen(true); }}
-                className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-purple/20 hover:text-accent-purple flex items-center justify-center text-zinc-400 transition-colors"
-                title="Novo Projeto"
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="w-5 h-5 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 transition-colors"
+                title={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                </svg>
+                {sidebarCollapsed ? <PanelLeft size={14} /> : <PanelLeftClose size={12} />}
               </button>
-              <button
-                onClick={() => setIsDialogOpen(true)}
-                disabled={projects.length === 0}
-                className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-blue/20 hover:text-accent-blue flex items-center justify-center text-zinc-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-app-elevated disabled:hover:text-zinc-400"
-                title={projects.length === 0 ? 'Crie um projeto primeiro' : 'Nova Conexao'}
-              >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6 1v10M1 6h10" />
-                </svg>
-              </button>
+              {!sidebarCollapsed && (
+                <>
+                  <button
+                    onClick={() => { setEditingProject(null); setIsProjectDialogOpen(true); }}
+                    className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-purple/20 hover:text-accent-purple flex items-center justify-center text-zinc-400 transition-colors"
+                    title="Novo Projeto"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setIsDialogOpen(true)}
+                    disabled={projects.length === 0}
+                    className="w-5 h-5 rounded bg-app-elevated hover:bg-accent-blue/20 hover:text-accent-blue flex items-center justify-center text-zinc-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-app-elevated disabled:hover:text-zinc-400"
+                    title={projects.length === 0 ? 'Crie um projeto primeiro' : 'Nova Conexao'}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 1v10M 1 6h10" />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {/* Projetos */}
-            {projects.length > 0 ? (
-              <div className="py-1">
-                {projects.map((project) => {
-                  const isExpanded = expandedProjects.has(project.Name);
-                  return (
-                    <div key={project.Name} className="group">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            {sidebarCollapsed ? (
+              <div className="flex flex-col items-center py-2 gap-2">
+                {projects.map((project) => (
+                  <div key={project.Name} className="flex flex-col items-center gap-1">
+                    <div
+                      className="w-3 h-3 rounded-sm shrink-0"
+                      style={{ backgroundColor: project.Color || '#3b82f6' }}
+                      title={project.Name}
+                    />
+                    {project.Connections?.map((conn) => (
                       <div
-                        className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 text-[11px] hover:bg-app-hover text-zinc-300 cursor-pointer"
+                        key={conn.Name}
+                        className="w-2 h-2 rounded-full shrink-0 cursor-pointer hover:ring-1 hover:ring-white/30 transition-all"
+                        style={{ backgroundColor: conn.Color || '#22c55e' }}
+                        title={conn.Name}
                         onClick={() => {
-                          setExpandedProjects(prev => {
-                            const next = new Set(prev);
-                            if (next.has(project.Name)) next.delete(project.Name);
-                            else next.add(project.Name);
-                            return next;
-                          });
+                          if (activeConnection === conn.Name) handleDisconnect();
+                          else handleConnect(conn);
                         }}
-                      >
-                        <ChevronRight
-                          size={10}
-                          className={`shrink-0 text-zinc-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                        />
-                        <div
-                          className="w-2.5 h-2.5 shrink-0"
-                          style={{ color: project.Color || '#3b82f6' }}
-                        >
-                          <Folder size={12} fill="currentColor" />
-                        </div>
-                        <span className="font-medium truncate flex-1">{project.Name}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditingProject(project); setIsProjectDialogOpen(true); }}
-                          className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          title="Editar projeto"
-                        >
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.Name); }}
-                          className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          title="Remover projeto"
-                        >
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                        </button>
-                      </div>
-                      {/* Conexoes do projeto */}
-                      {isExpanded && project.Connections?.map((conn) => (
-                        <div key={conn.Name} className="group">
-                          <div
-                            className={`w-full text-left pl-9 pr-2.5 py-1.5 flex items-center gap-2 transition-colors text-[11px] border-l-2 cursor-pointer ${
-                              activeConnection === conn.Name
-                                ? 'bg-accent-blue/10 text-white border-l-accent-blue'
-                                : 'hover:bg-app-hover text-zinc-300 hover:text-white border-l-transparent'
-                            }`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (activeConnection === conn.Name) {
-                                handleDisconnect();
-                              } else {
-                                handleConnect(conn);
-                              }
-                            }}
-                          >
-                            <ChevronRight
-                              size={9}
-                              className={`shrink-0 text-zinc-500 transition-transform ${activeConnection === conn.Name ? 'rotate-90' : ''}`}
-                            />
-                            <Database size={11} className="shrink-0" style={{ color: conn.Color || '#22c55e' }} />
-                            <span className="font-medium truncate">{conn.Name}</span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleEditConnection(conn); }}
-                              className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                              title="Editar conexao"
-                            >
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDeleteConnection(conn.Name); }}
-                              className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                              title="Remover conexao"
-                            >
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
-                            </button>
-                          </div>
-                          {activeConnection === conn.Name && (
-                            <div className="pl-9 bg-app-bg/30 animate-fade-in">
-                              <SchemaTree
-                                connectionName={conn.Name}
-                                onTableSelect={handleTableSelect}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
+                      />
+                    ))}
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="px-3 py-4 text-center text-[11px] text-zinc-600">
-                Crie um projeto para adicionar conexoes
+              <div className="py-1">
+                {projects.length > 0 ? (
+                  projects.map((project) => {
+                    const isExpanded = expandedProjects.has(project.Name);
+                    return (
+                      <div key={project.Name} className="group">
+                        <div
+                          className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 text-[0.917em] hover:bg-app-hover text-zinc-300 cursor-pointer"
+                          onClick={() => {
+                            setExpandedProjects(prev => {
+                              const next = new Set(prev);
+                              if (next.has(project.Name)) next.delete(project.Name);
+                              else next.add(project.Name);
+                              return next;
+                            });
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setProjContextMenu({ x: e.clientX, y: e.clientY, project });
+                          }}
+                        >
+                          <ChevronRight
+                            size={10}
+                            className={`shrink-0 text-zinc-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          />
+                          <div
+                            className="w-2.5 h-2.5 shrink-0"
+                            style={{ color: project.Color || '#3b82f6' }}
+                          >
+                            <Folder size={12} fill="currentColor" />
+                          </div>
+                          <span className="font-medium truncate flex-1">{project.Name}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingProject(project); setIsProjectDialogOpen(true); }}
+                            className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            title="Editar projeto"
+                          >
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.Name); }}
+                            className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            title="Remover projeto"
+                          >
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                        {isExpanded && project.Connections?.map((conn) => (
+                          <div key={conn.Name} className="group">
+                            <div
+                              className={`w-full text-left pl-9 pr-2.5 py-1.5 flex items-center gap-2 transition-colors text-[0.917em] border-l-2 cursor-pointer ${
+                                activeConnection === conn.Name
+                                  ? 'bg-accent-blue/10 text-white border-l-accent-blue'
+                                  : 'hover:bg-app-hover text-zinc-300 hover:text-white border-l-transparent'
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (activeConnection === conn.Name) {
+                                  handleDisconnect();
+                                } else {
+                                  handleConnect(conn);
+                                }
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setConnContextMenu({ x: e.clientX, y: e.clientY, conn });
+                              }}
+                            >
+                              <ChevronRight
+                                size={9}
+                                className={`shrink-0 text-zinc-500 transition-transform ${activeConnection === conn.Name ? 'rotate-90' : ''}`}
+                              />
+                              <Database size={11} className="shrink-0" style={{ color: conn.Color || '#22c55e' }} />
+                              <span className="font-medium truncate flex-1">{conn.Name}</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleEditConnection(conn); }}
+                                className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                title="Editar conexao"
+                              >
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteConnection(conn.Name); }}
+                                className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                title="Remover conexao"
+                              >
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                              </button>
+                            </div>
+                            {activeConnection === conn.Name && (
+                              <div className="pl-9 bg-app-bg/30 animate-fade-in">
+                                <SchemaTree
+                                  connectionName={conn.Name}
+                                  onTableSelect={handleTableSelect}
+                                  onOpenQuery={handleOpenQueryFromTree}
+                                  onShowDefinition={handleShowDefinition}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-3 py-4 text-center text-[0.917em] text-zinc-600">
+                    Crie um projeto para adicionar conexoes
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {activeConnection && (
-            <div className="p-1.5 border-t border-app-border">
-              <button
-                onClick={handleDisconnect}
-                className="w-full px-2 py-1 text-[11px] text-zinc-400 hover:text-accent-red hover:bg-accent-red/10 rounded transition-colors"
-              >
-                Desconectar
-              </button>
-            </div>
-          )}
         </aside>
 
         {/* Main Content */}
@@ -1074,10 +1394,16 @@ function App() {
                   ? connections.find((c) => c.Name === tab.connection)?.Type || ''
                   : '';
                 return (
-                  <button
+                  <div
                     key={tab.id}
                     onClick={() => setActiveTabId(tab.id)}
-                    className={`group relative h-full px-3 flex items-center gap-1.5 text-[11px] border-r border-app-border shrink-0 transition-colors ${
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setActiveTabId(tab.id);
+                      setTabContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                    }}
+                    onDoubleClick={() => startRenameTab(tab.id)}
+                    className={`group relative h-full px-3 flex items-center gap-1.5 text-[0.917em] border-r border-app-border shrink-0 transition-colors cursor-default ${
                       activeTabId === tab.id
                         ? 'bg-app-bg text-white'
                         : 'bg-app-surface text-zinc-400 hover:text-zinc-200 hover:bg-app-elevated'
@@ -1092,7 +1418,22 @@ function App() {
                         }}
                       />
                     )}
-                    <span className="max-w-[120px] truncate">{tab.title}</span>
+                    {renamingTabId === tab.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={confirmRenameTab}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') confirmRenameTab();
+                          if (e.key === 'Escape') setRenamingTabId(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="max-w-[120px] bg-app-elevated border border-accent-blue rounded px-1 text-[0.917em] text-white outline-none"
+                      />
+                    ) : (
+                      <span className="max-w-[120px] truncate">{tab.title}</span>
+                    )}
                     {tabs.length > 1 && (
                       <span
                         onClick={(e) => {
@@ -1109,7 +1450,7 @@ function App() {
                     {activeTabId === tab.id && (
                       <div className="absolute bottom-0 left-0 right-0 h-px bg-accent-blue" />
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1129,7 +1470,7 @@ function App() {
             <button
               onClick={() => handleExecuteQuery()}
               disabled={!activeTab.connection || activeTab.isLoading}
-              className="h-7 px-3 bg-accent-green hover:bg-accent-green/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-[11px] font-medium text-white flex items-center gap-1 transition-colors"
+              className="h-7 px-3 bg-accent-green hover:bg-accent-green/90 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed rounded text-[0.917em] font-medium text-white flex items-center gap-1 transition-colors"
             >
               {activeTab.isLoading ? (
                 <>
@@ -1148,13 +1489,13 @@ function App() {
               )}
             </button>
             <div className="h-3 w-px bg-app-border" />
-            <span className="text-[10px] text-zinc-600 font-mono">Ctrl+Enter</span>
+            <span className="text-[0.83em] text-zinc-600 font-mono">Ctrl+Enter</span>
 
             {/* Save Query */}
             <button
               onClick={handleSaveQuery}
               disabled={!activeTab.query.trim()}
-              className="h-7 px-2 bg-app-bg hover:bg-app-elevated disabled:opacity-40 disabled:cursor-not-allowed rounded text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 transition-colors"
+              className="h-7 px-2 bg-app-bg hover:bg-app-elevated disabled:opacity-40 disabled:cursor-not-allowed rounded text-[0.917em] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 transition-colors"
               title="Salvar query"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1169,7 +1510,7 @@ function App() {
             <div className="relative">
               <button
                 onClick={() => setIsSavedQueriesOpen(!isSavedQueriesOpen)}
-                className="h-7 px-2 bg-app-bg hover:bg-app-elevated rounded text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 transition-colors"
+                className="h-7 px-2 bg-app-bg hover:bg-app-elevated rounded text-[0.917em] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 transition-colors"
                 title="Carregar query salva"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1181,34 +1522,43 @@ function App() {
                 </svg>
               </button>
               {isSavedQueriesOpen && (
-                <div className="absolute top-full left-0 mt-1 w-72 max-h-60 overflow-y-auto bg-app-surface border border-app-border rounded shadow-lg z-50">
+                <div className="absolute top-full left-0 mt-1 w-80 max-h-72 overflow-y-auto bg-app-surface border border-app-border rounded shadow-lg z-50">
                   {savedQueries.length === 0 ? (
-                    <div className="px-3 py-2 text-[11px] text-zinc-500">Nenhuma query salva</div>
+                    <div className="px-3 py-2 text-[0.917em] text-zinc-500">Nenhuma query salva</div>
                   ) : (
-                    savedQueries.map((sq) => (
-                      <div
-                        key={sq.Name}
-                        className="group flex items-center gap-2 px-3 py-1.5 hover:bg-app-hover cursor-pointer"
-                        onClick={() => handleLoadSavedQuery(sq)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[11px] text-zinc-200 font-medium truncate">{sq.Name}</div>
-                          <div className="text-[10px] text-zinc-500 truncate font-mono">{sq.Query}</div>
-                        </div>
-                        {sq.Connection && (
-                          <span className="text-[9px] text-zinc-600 shrink-0">{sq.Connection}</span>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteSavedQuery(sq.Name); }}
-                          className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          title="Remover"
+                    savedQueries.map((sq) => {
+                      const project = projects.find((p) => p.Connections?.some((c) => c.Name === sq.Connection));
+                      return (
+                        <div
+                          key={sq.Name}
+                          className="group flex items-center gap-2.5 px-3 py-2 hover:bg-app-hover cursor-pointer"
+                          onClick={() => handleLoadSavedQuery(sq)}
                         >
-                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M1 1l6 6M7 1l-6 6" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))
+                          {project && (
+                            <div
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: project.Color || '#3b82f6' }}
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[1em] text-zinc-200 font-medium truncate">{sq.Name}</div>
+                            <div className="text-[0.83em] text-zinc-500 truncate font-mono mt-0.5">{sq.Query}</div>
+                          </div>
+                          {project && (
+                            <span className="text-[0.83em] text-zinc-500 shrink-0">{project.Name}</span>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteSavedQuery(sq.Name); }}
+                            className="w-4 h-4 rounded flex items-center justify-center text-zinc-500 hover:text-accent-red hover:bg-accent-red/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            title="Remover"
+                          >
+                            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M1 1l6 6M7 1l-6 6" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1224,7 +1574,7 @@ function App() {
                     <button
                       key={mode}
                       onClick={() => setTransactionMode(mode)}
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${
+                      className={`px-1.5 py-0.5 rounded text-[0.75em] font-medium transition-colors ${
                         transactionMode === mode
                           ? 'bg-accent-blue text-white'
                           : 'text-zinc-500 hover:text-zinc-300'
@@ -1246,7 +1596,7 @@ function App() {
                     <div className="h-3 w-px bg-app-border" />
                     <button
                       onClick={() => handleCommit()}
-                      className="h-6 px-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                      className="h-6 px-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green rounded text-[0.83em] font-medium flex items-center gap-1 transition-colors"
                       title="Commit (Ctrl+Shift+C)"
                     >
                       <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1254,14 +1604,14 @@ function App() {
                       </svg>
                       Commit
                       {transactionMode === 'manual' && activeTab.pendingTransactions > 0 && (
-                        <span className="ml-0.5 px-1 py-0.5 bg-accent-green/30 rounded text-[8px]">
+                        <span className="ml-0.5 px-1 py-0.5 bg-accent-green/30 rounded text-[0.667em]">
                           {activeTab.pendingTransactions}
                         </span>
                       )}
                     </button>
                     <button
                       onClick={() => handleRollback()}
-                      className="h-6 px-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-[10px] font-medium flex items-center gap-1 transition-colors"
+                      className="h-6 px-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-[0.83em] font-medium flex items-center gap-1 transition-colors"
                       title="Rollback (Ctrl+Shift+Z)"
                     >
                       <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1282,7 +1632,7 @@ function App() {
                   <select
                     value={currentDatabase || ''}
                     onChange={(e) => setCurrentDatabase(e.target.value)}
-                    className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[10px] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
+                    className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[0.83em] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
                     title="Banco de dados ativo"
                   >
                     {databases.map((db) => (
@@ -1293,7 +1643,7 @@ function App() {
                     <select
                       value={currentSchema || ''}
                       onChange={(e) => setCurrentSchema(e.target.value)}
-                      className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[10px] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
+                      className="h-6 px-1.5 bg-app-bg border border-app-border rounded text-[0.83em] text-zinc-300 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue/50 transition-colors max-w-[120px]"
                       title="Schema ativo"
                     >
                       {schemas.map((s) => (
@@ -1307,7 +1657,7 @@ function App() {
 
             <div className="flex-1" />
             {activeTab.result && (
-              <span className="text-[10px] text-zinc-500">
+              <span className="text-[0.83em] text-zinc-500">
                 {activeTab.result.RowCount} rows {activeTab.result.Duration ? `${activeTab.result.Duration}ms` : ''}
               </span>
             )}
@@ -1322,12 +1672,13 @@ function App() {
               onChange={(val) => updateTab(activeTabId, { query: val })}
               onExecute={() => handleExecuteQuery()}
               onExecuteAll={() => handleExecuteAll()}
+              onSave={() => handleQuickSave()}
             />
           </div>
 
           {/* Error */}
           {activeTab.error && (
-            <div className="mx-2 mt-2 px-2.5 py-1.5 bg-accent-red/10 border border-accent-red/20 rounded text-accent-red text-[11px] flex items-center gap-2 animate-fade-in">
+            <div className="mx-2 mt-2 px-2.5 py-1.5 bg-accent-red/10 border border-accent-red/20 rounded text-accent-red text-[0.917em] flex items-center gap-2 animate-fade-in">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 8v4M12 16h.01" />
@@ -1344,15 +1695,24 @@ function App() {
           >
             {activeTab.result && activeTab.result.Columns && activeTab.result.Columns.length > 0 ? (
               <div className="min-w-full">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-[0.917em]">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-app-surface border-b border-app-border">
-                      {activeTab.result.Columns?.map((col: string) => (
+                      <th onClick={handleSelectAll} className="w-8 px-1 py-1.5 text-right text-[0.83em] text-zinc-600 font-medium sticky left-0 bg-app-surface z-20 cursor-pointer select-none hover:text-zinc-300">#</th>
+                      {activeTab.result.Columns?.map((col: string, colIdx: number) => (
                         <th
                           key={col}
-                          className="px-2.5 py-1.5 text-left text-[10px] font-medium text-zinc-400 whitespace-nowrap"
+                          onClick={(e) => handleColumnClick(colIdx, e)}
+                          className={`px-2.5 py-1.5 text-left text-[0.83em] font-medium whitespace-nowrap cursor-pointer select-none transition-colors ${
+                            selectedColumns.has(colIdx)
+                              ? 'bg-accent-blue/20 text-white'
+                              : 'text-zinc-400 hover:bg-app-hover hover:text-zinc-200'
+                          }`}
                         >
-                          {col}
+                          <div>{col}</div>
+                          {activeTab.result?.ColumnTypes?.[colIdx] && (
+                            <div className="text-[0.75em] text-zinc-600 font-normal normal-case">{activeTab.result.ColumnTypes[colIdx]}</div>
+                          )}
                         </th>
                       ))}
                     </tr>
@@ -1368,18 +1728,27 @@ function App() {
                         }`}
                         onClick={(e) => handleRowClick(rowIdx, e)}
                       >
+                        <td
+                          className="w-8 px-1 py-1 text-right text-[0.83em] text-zinc-600 sticky left-0 bg-app-bg z-10 cursor-pointer select-none"
+                          onClick={(e) => { e.stopPropagation(); handleRowClick(rowIdx, e); }}
+                        >
+                          {rowIdx + 1}
+                        </td>
                         {row.map((cell: any, cellIdx: number) => {
                           const displayValue = getCellDisplayValue(rowIdx, cellIdx, cell);
                           const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.colIdx === cellIdx;
                           const isChanged = isCellChanged(rowIdx, cellIdx);
                           const isFocused = focusedCell?.rowIdx === rowIdx && focusedCell?.colIdx === cellIdx;
+                          const isColSelected = selectedColumns.has(cellIdx);
 
                           return (
                             <td
                               key={cellIdx}
-                              className={`px-2.5 py-1 text-[11px] whitespace-nowrap cursor-default ${
+                              className={`px-2.5 py-1 text-[0.917em] whitespace-nowrap cursor-default ${
                                 isChanged ? 'bg-yellow-500/10' : ''
-                              } ${isFocused ? 'ring-1 ring-accent-blue/50 ring-inset' : ''}`}
+                              } ${isFocused ? 'ring-1 ring-accent-blue/50 ring-inset' : ''} ${
+                                isColSelected && !isFocused ? 'bg-accent-blue/10' : ''
+                              }`}
                               onDoubleClick={() => handleCellDoubleClick(rowIdx, cellIdx, cell)}
                               onClick={(e) => { e.stopPropagation(); handleCellClick(rowIdx, cellIdx); }}
                               onContextMenu={(e) => handleContextMenu(e, rowIdx, cellIdx)}
@@ -1392,12 +1761,12 @@ function App() {
                                   onChange={(e) => setEditValue(e.target.value)}
                                   onKeyDown={handleEditKeyDown}
                                   onBlur={saveEdit}
-                                  className="w-full min-w-[60px] px-1 py-0.5 bg-app-bg border border-accent-blue rounded text-[11px] text-zinc-100 outline-none"
+                                  className="w-full min-w-[60px] px-1 py-0.5 bg-app-bg border border-accent-blue rounded text-[0.917em] text-zinc-100 outline-none"
                                 />
                               ) : displayValue !== null && displayValue !== undefined ? (
                                 <span className={isChanged ? 'text-yellow-300' : 'text-zinc-200'}>{String(displayValue)}</span>
                               ) : (
-                                <span className="text-zinc-600 italic font-mono text-[10px]">NULL</span>
+                                <span className="text-zinc-600 italic font-mono text-[0.83em]">NULL</span>
                               )}
                             </td>
                           );
@@ -1409,7 +1778,7 @@ function App() {
 
                 {/* Load More / Load All bar */}
                 {activeTab.result.Rows && activeTab.result.Rows.length > 0 && (
-                  <div className="sticky bottom-0 bg-app-surface border-t border-app-border px-3 py-1.5 flex items-center justify-between text-[10px]">
+                  <div className="sticky bottom-0 bg-app-surface border-t border-app-border px-3 py-1.5 flex items-center justify-between text-[0.83em]">
                     <div className="flex items-center gap-3">
                       <span className="text-zinc-500">
                         Mostrando {activeTab.result.Rows.length} linhas
@@ -1470,7 +1839,7 @@ function App() {
                 )}
               </div>
             ) : activeTab.result ? (
-              <div className="p-3 text-center text-zinc-500 text-[11px]">
+              <div className="p-3 text-center text-zinc-500 text-[0.917em]">
                 {activeTab.result.Message}
               </div>
             ) : (
@@ -1480,100 +1849,261 @@ function App() {
                     <path d="M4 7c0-1.1.9-2 2-2h8l4 4v10c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2V7z" />
                     <path d="M9 13h6M9 17h4" />
                   </svg>
-                  <p className="text-[11px]">Execute uma query para ver os resultados</p>
-                  <p className="text-[10px] text-zinc-700 mt-0.5">Ctrl+Enter para executar</p>
+                  <p className="text-[0.917em]">Execute uma query para ver os resultados</p>
+                  <p className="text-[0.83em] text-zinc-700 mt-0.5">Ctrl+Enter para executar</p>
                 </div>
               </div>
             )}
 
             {/* Selection Toolbar */}
-            {selectedRows.size > 0 && activeTab.result && (
-              <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-app-surface border border-app-border rounded-lg shadow-xl px-3 py-2 flex items-center gap-3 text-[11px] animate-fade-in">
-                <span className="text-zinc-300 font-medium">{selectedRows.size} linhas selecionadas</span>
+            {(selectedRows.size > 0 || selectedColumns.size > 0) && activeTab.result && (
+              <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-app-surface border border-app-border rounded-lg shadow-xl px-3 py-2 flex items-center gap-3 text-[0.917em] animate-fade-in">
+                {selectedRows.size > 0 && <span className="text-zinc-300 font-medium">{selectedRows.size} linhas</span>}
+                {selectedRows.size > 0 && selectedColumns.size > 0 && <div className="h-4 w-px bg-app-border" />}
+                {selectedColumns.size > 0 && <span className="text-zinc-300 font-medium">{selectedColumns.size} colunas</span>}
                 <div className="h-4 w-px bg-app-border" />
+                {selectedRows.size > 0 && (
+                  <button
+                    onClick={handleCopySelectedRowsToolbar}
+                    className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
+                  >
+                    Copiar linhas
+                  </button>
+                )}
+                {selectedColumns.size > 0 && (
+                  <button
+                    onClick={() => {
+                      const colIndices = Array.from(selectedColumns).sort((a, b) => a - b);
+                      const lines = (activeTab.result?.Rows || []).map((r) => colIndices.map((ci) => r[ci] === null ? 'NULL' : String(r[ci])).join('\t'));
+                      copyToClipboard(lines.join('\n'));
+                      showToast(`${selectedColumns.size} colunas copiadas`, 'success');
+                    }}
+                    className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
+                  >
+                    Copiar colunas
+                  </button>
+                )}
+                {selectedRows.size > 0 && (
+                  <button
+                    onClick={handleCopySelectedAsInsertToolbar}
+                    className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
+                  >
+                    Copiar como INSERT
+                  </button>
+                )}
                 <button
-                  onClick={handleCopySelectedRowsToolbar}
-                  className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
-                >
-                  Copiar
-                </button>
-                <button
-                  onClick={handleCopySelectedAsInsertToolbar}
-                  className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
-                >
-                  Copiar como INSERT
-                </button>
-                <button
-                  onClick={() => setSelectedRows(new Set())}
+                  onClick={() => { setSelectedRows(new Set()); setSelectedColumns(new Set()); }}
                   className="px-2 py-1 text-zinc-500 hover:text-zinc-300 hover:bg-app-elevated rounded transition-colors"
                 >
-                  Limpar selecao
+                  Limpar
                 </button>
               </div>
             )}
 
-            {/* Context Menu */}
+            {/* Grid Context Menu */}
             {contextMenu && (
-              <div
-                className="fixed z-50 bg-app-surface border border-app-border rounded-lg shadow-xl py-1 min-w-[200px] animate-fade-in"
-                style={{ left: contextMenu.x, top: contextMenu.y }}
-              >
-                <button
-                  onClick={handleCopyCell}
-                  className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-app-hover hover:text-white flex items-center gap-2"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                  Copiar celula
-                </button>
-                <button
-                  onClick={handleCopyRow}
-                  className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-app-hover hover:text-white flex items-center gap-2"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  Copiar linha
-                </button>
-                <button
-                  onClick={handleCopySelectedRows}
-                  disabled={selectedRows.size === 0}
-                  className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-app-hover hover:text-white flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                  Copiar linhas selecionadas
-                  {selectedRows.size > 0 && (
-                    <span className="ml-auto text-zinc-500">{selectedRows.size}</span>
-                  )}
-                </button>
-                <div className="h-px bg-app-border my-1" />
-                <button
-                  onClick={handleCopyAsInsert}
-                  className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-app-hover hover:text-white flex items-center gap-2"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="16 18 22 12 16 6" />
-                    <polyline points="8 6 2 12 8 18" />
-                  </svg>
-                  Copiar como INSERT
-                </button>
-                <div className="h-px bg-app-border my-1" />
-                <button
-                  onClick={handleSelectAll}
-                  className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-app-hover hover:text-white flex items-center gap-2"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 11 12 14 22 4" />
-                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                  </svg>
-                  Selecionar todas
-                </button>
+              <ContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                onClose={() => setContextMenu(null)}
+                items={[
+                  { label: 'Copiar celula', onClick: handleCopyCell },
+                  { label: 'Copiar linha', onClick: handleCopyRow },
+                  { label: 'Copiar coluna', onClick: () => {
+                    if (!activeTab.result) return;
+                    const colIdx = contextMenu.colIdx;
+                    const lines = (activeTab.result.Rows || []).map((r) => r[colIdx] === null ? 'NULL' : String(r[colIdx]));
+                    copyToClipboard(lines.join('\n'));
+                    showToast('Coluna copiada', 'success');
+                  }},
+                  { label: 'Copiar linhas selecionadas', onClick: handleCopySelectedRows, disabled: selectedRows.size === 0 },
+                  { label: 'Copiar colunas selecionadas', onClick: () => {
+                    if (!activeTab.result) return;
+                    const colIndices = Array.from(selectedColumns).sort((a, b) => a - b);
+                    const lines = (activeTab.result.Rows || []).map((r) => colIndices.map((ci) => r[ci] === null ? 'NULL' : String(r[ci])).join('\t'));
+                    copyToClipboard(lines.join('\n'));
+                    showToast(`${selectedColumns.size} colunas copiadas`, 'success');
+                  }, disabled: selectedColumns.size === 0 },
+                  { separator: true },
+                  { label: 'Copiar como INSERT', onClick: handleCopyAsInsert },
+                  { label: 'Copiar especial...', shortcut: 'Ctrl+Shift+C', onClick: () => setCopySpecialOpen(true) },
+                  { separator: true },
+                  { label: 'Selecionar todas', onClick: handleSelectAll },
+                ]}
+              />
+            )}
+
+            {/* Tab Context Menu */}
+            {tabContextMenu && (
+              <ContextMenu
+                x={tabContextMenu.x}
+                y={tabContextMenu.y}
+                onClose={() => setTabContextMenu(null)}
+                items={[
+                  { label: 'Renomear', shortcut: 'F2', onClick: () => startRenameTab(tabContextMenu.tabId) },
+                  { label: 'Salvar', shortcut: 'Ctrl+S', onClick: handleQuickSave },
+                  { separator: true },
+                  { label: 'Fechar', onClick: () => handleCloseTab(tabContextMenu.tabId), disabled: tabs.length === 1 },
+                  { label: 'Fechar outras', onClick: () => handleCloseOtherTabs(tabContextMenu.tabId), disabled: tabs.length <= 1 },
+                  { label: 'Fechar a direita', onClick: () => handleCloseRightTabs(tabContextMenu.tabId) },
+                  { separator: true },
+                  { label: 'Duplicar em nova aba', onClick: () => handleDuplicateTab(tabContextMenu.tabId) },
+                ]}
+              />
+            )}
+
+            {/* Connection Context Menu */}
+            {connContextMenu && (
+              <ContextMenu
+                x={connContextMenu.x}
+                y={connContextMenu.y}
+                onClose={() => setConnContextMenu(null)}
+                items={[
+                  {
+                    label: activeConnection === connContextMenu.conn.Name ? 'Desconectar' : 'Conectar',
+                    onClick: () => {
+                      if (activeConnection === connContextMenu.conn.Name) handleDisconnect();
+                      else handleConnect(connContextMenu.conn);
+                    },
+                  },
+                  { label: 'Editar', onClick: () => handleEditConnection(connContextMenu.conn) },
+                  { label: 'Testar conexao', onClick: async () => {
+                    try {
+                      await TestConnection(connContextMenu.conn);
+                      showToast('Conexao testada com sucesso', 'success');
+                    } catch (err) {
+                      showToast(`Erro ao testar: ${err}`, 'error');
+                    }
+                  }},
+                  { separator: true },
+                  {
+                    label: 'Scripts recentes',
+                    children: savedQueries.filter((sq) => sq.Connection === connContextMenu.conn.Name).length > 0
+                      ? savedQueries
+                          .filter((sq) => sq.Connection === connContextMenu.conn.Name)
+                          .map((sq) => ({
+                            label: sq.Name,
+                            onClick: () => handleLoadSavedQuery(sq),
+                          }))
+                      : [{ label: 'Nenhum script salvo', disabled: true, onClick: () => {} }],
+                  },
+                  { separator: true },
+                  { label: 'Copiar nome', onClick: () => { navigator.clipboard.writeText(connContextMenu.conn.Name); showToast('Nome copiado', 'success'); } },
+                  { separator: true },
+                  { label: 'Remover', onClick: () => handleDeleteConnection(connContextMenu.conn.Name) },
+                ]}
+              />
+            )}
+
+            {/* Project Context Menu */}
+            {projContextMenu && (
+              <ContextMenu
+                x={projContextMenu.x}
+                y={projContextMenu.y}
+                onClose={() => setProjContextMenu(null)}
+                items={[
+                  { label: 'Editar', onClick: () => { setEditingProject(projContextMenu.project); setIsProjectDialogOpen(true); } },
+                  { label: 'Nova conexao', onClick: () => { setEditingProject(null); setIsDialogOpen(true); } },
+                  {
+                    label: 'Scripts recentes',
+                    children: (() => {
+                      const connNames = new Set(projContextMenu.project.Connections?.map((c) => c.Name) || []);
+                      const projectQueries = savedQueries.filter((sq) => connNames.has(sq.Connection));
+                      return projectQueries.length > 0
+                        ? projectQueries.map((sq) => ({
+                            label: sq.Name,
+                            onClick: () => handleLoadSavedQuery(sq),
+                          }))
+                        : [{ label: 'Nenhum script salvo', disabled: true, onClick: () => {} }];
+                    })(),
+                  },
+                  { separator: true },
+                  { label: 'Exportar projeto', onClick: () => handleExportProject(projContextMenu.project.Name) },
+                  { label: 'Importar projeto', onClick: handleImportProject },
+                  { separator: true },
+                  { label: 'Remover', onClick: () => handleDeleteProject(projContextMenu.project.Name) },
+                ]}
+              />
+            )}
+
+            {/* Copy Special Modal */}
+            {copySpecialOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCopySpecialOpen(false)}>
+                <div className="bg-app-surface border border-app-border rounded-xl shadow-2xl p-4 w-80 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-sm font-semibold text-zinc-200 mb-3">Copiar Especial</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-[0.917em] text-zinc-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={copySpecialConfig.includeHeaders}
+                        onChange={(e) => setCopySpecialConfig((p) => ({ ...p, includeHeaders: e.target.checked }))}
+                        className="rounded border-zinc-600 bg-app-bg text-accent-blue focus:ring-accent-blue"
+                      />
+                      Incluir cabecalho
+                    </label>
+                    <div>
+                      <label className="text-[0.917em] text-zinc-400 block mb-1">Delimitador</label>
+                      <div className="flex gap-1">
+                        {[
+                          { label: 'Tab', value: '\t' },
+                          { label: ',', value: ',' },
+                          { label: ';', value: ';' },
+                          { label: '|', value: '|' },
+                          { label: 'Custom', value: 'custom' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setCopySpecialConfig((p) => ({ ...p, delimiter: opt.value }))}
+                            className={`px-2 py-1 text-[0.83em] rounded border transition-colors ${
+                              copySpecialConfig.delimiter === opt.value
+                                ? 'bg-accent-blue/20 border-accent-blue text-white'
+                                : 'border-app-border text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {copySpecialConfig.delimiter === 'custom' && (
+                        <input
+                          autoFocus
+                          value={copySpecialConfig.customDelimiter}
+                          onChange={(e) => setCopySpecialConfig((p) => ({ ...p, customDelimiter: e.target.value }))}
+                          placeholder="Digite o delimitador"
+                          className="mt-1 w-full px-2 py-1 bg-app-bg border border-app-border rounded text-[0.917em] text-zinc-200 outline-none focus:border-accent-blue"
+                        />
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 text-[0.917em] text-zinc-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={copySpecialConfig.quoteStrings}
+                        onChange={(e) => setCopySpecialConfig((p) => ({ ...p, quoteStrings: e.target.checked }))}
+                        className="rounded border-zinc-600 bg-app-bg text-accent-blue focus:ring-accent-blue"
+                      />
+                      Aspas em strings
+                    </label>
+                    {selectedRows.size > 0 && (
+                      <div className="text-[0.83em] text-zinc-500">
+                        Copiando {selectedRows.size} linhas selecionadas
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button
+                      onClick={() => setCopySpecialOpen(false)}
+                      className="px-3 py-1.5 text-[0.917em] text-zinc-400 hover:text-zinc-200 rounded border border-app-border hover:border-zinc-500 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleCopySpecial}
+                      className="px-3 py-1.5 text-[0.917em] text-white bg-accent-blue hover:bg-accent-blue/80 rounded transition-colors"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1582,7 +2112,7 @@ function App() {
               {toasts.map((toast) => (
                 <div
                   key={toast.id}
-                  className={`px-3 py-2 rounded-lg shadow-xl text-[11px] font-medium animate-fade-in ${
+                  className={`px-3 py-2 rounded-lg shadow-xl text-[0.917em] font-medium animate-fade-in ${
                     toast.type === 'success'
                       ? 'bg-accent-green/20 text-accent-green border border-accent-green/30'
                       : 'bg-accent-red/20 text-accent-red border border-accent-red/30'
@@ -1597,7 +2127,7 @@ function App() {
       </div>
 
       {/* Status Bar */}
-      <footer className="h-7 bg-app-surface border-t border-app-border flex items-center px-3 text-[11px] shrink-0">
+      <footer className="h-7 bg-app-surface border-t border-app-border flex items-center px-3 text-[0.917em] shrink-0">
         {activeConnection ? (
           <div className="flex items-center gap-2">
             {(() => {
@@ -1621,7 +2151,7 @@ function App() {
           <span className="text-zinc-600">Nenhuma conexao ativa</span>
         )}
         <div className="flex-1" />
-        <span className="text-zinc-600">The Amzg DB v0.1.0</span>
+        <span className="text-zinc-600">The Amzg DB v0.1.1</span>
       </footer>
 
       {/* Connection Dialog */}

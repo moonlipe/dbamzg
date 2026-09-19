@@ -205,6 +205,7 @@ export namespace types {
 	}
 	export class QueryResult {
 	    Columns: string[];
+	    ColumnTypes: string[];
 	    Rows: any[][];
 	    RowCount: number;
 	    Message: string;
@@ -217,6 +218,7 @@ export namespace types {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Columns = source["Columns"];
+	        this.ColumnTypes = source["ColumnTypes"];
 	        this.Rows = source["Rows"];
 	        this.RowCount = source["RowCount"];
 	        this.Message = source["Message"];

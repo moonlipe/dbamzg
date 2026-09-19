@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -195,23 +196,36 @@ func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*typ
 
 	start := time.Now()
 
-	// Se estiver em modo manual e não tiver transação ativa, iniciar uma
-	if transactionMode == "manual" && conn.Tx == nil {
-		tx, err := conn.DB.Begin()
-		if err != nil {
-			return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+	// Detectar tipo antes de iniciar tx
+	trimmedUpper := strings.TrimSpace(strings.ToUpper(query))
+	isSelect := strings.HasPrefix(trimmedUpper, "SELECT") || strings.HasPrefix(trimmedUpper, "WITH")
+	isDML := strings.HasPrefix(trimmedUpper, "INSERT") || strings.HasPrefix(trimmedUpper, "UPDATE") || strings.HasPrefix(trimmedUpper, "DELETE") || strings.HasPrefix(trimmedUpper, "MERGE")
+
+	// Iniciar transação conforme o modo
+	if conn.Tx == nil {
+		if transactionMode == "manual" {
+			tx, err := conn.DB.Begin()
+			if err != nil {
+				return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+			}
+			conn.Tx = tx
+			conn.TxMode = types.Manual
+			log.Printf("[manager] Transação iniciada para modo manual")
+		} else if transactionMode == "smartcommit" && isDML {
+			tx, err := conn.DB.Begin()
+			if err != nil {
+				return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+			}
+			conn.Tx = tx
+			conn.TxMode = types.SmartCommit
+			log.Printf("[manager] Transação iniciada para smartcommit DML")
 		}
-		conn.Tx = tx
-		conn.TxMode = types.Manual
-		log.Printf("[manager] Transação iniciada para modo manual")
 	}
 
 	// Se tiver transação ativa, executar nela
 	var result *types.QueryResult
 	if conn.Tx != nil {
-		// Para queries SELECT, usar a transação
-		trimmed := strings.TrimSpace(strings.ToUpper(query))
-		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
+		if isSelect {
 			rows, err := conn.Tx.Query(query)
 			if err != nil {
 				return nil, err
@@ -260,8 +274,7 @@ func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*typ
 			}
 		}
 	} else {
-		// Executar direto (autocommit ou smartcommit sem mudanças)
-		// Adicionar limit para queries SELECT
+		// Executar direto (autocommit ou smartcommit sem tx)
 		trimmed := strings.TrimSpace(strings.ToUpper(query))
 		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
 			if !strings.Contains(trimmed, " TOP ") && !strings.Contains(trimmed, "\nTOP ") && !strings.HasPrefix(strings.TrimSpace(trimmed), "TOP ") {
@@ -393,23 +406,43 @@ func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, t
 
 	start := time.Now()
 
-	// Wrap the query with pagination
+	// Detectar tipo da query antes de iniciar transação
 	trimmed := strings.TrimSpace(strings.ToUpper(query))
 	isSelect := strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH")
+	isDML := strings.HasPrefix(trimmed, "INSERT") || strings.HasPrefix(trimmed, "UPDATE") || strings.HasPrefix(trimmed, "DELETE") || strings.HasPrefix(trimmed, "MERGE")
 
+	// Iniciar transação conforme o modo
+	if conn.Tx == nil {
+		if transactionMode == "manual" {
+			tx, err := conn.DB.Begin()
+			if err != nil {
+				return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+			}
+			conn.Tx = tx
+			conn.TxMode = types.Manual
+			log.Printf("[manager] Transação iniciada para modo manual (paginated)")
+		} else if transactionMode == "smartcommit" && isDML {
+			tx, err := conn.DB.Begin()
+			if err != nil {
+				return nil, fmt.Errorf("erro ao iniciar transação: %w", err)
+			}
+			conn.Tx = tx
+			conn.TxMode = types.SmartCommit
+			log.Printf("[manager] Transação iniciada para smartcommit DML (paginated)")
+		}
+	}
+
+	// Wrap SELECT with pagination
 	if isSelect {
-		// Check if query already has LIMIT/OFFSET or TOP
 		matched, _ := regexp.MatchString(`(?i)\bLIMIT\s+\d`, query)
 		hasLimit := matched
 		hasTop := strings.Contains(trimmed, " TOP ")
 
 		if !hasLimit && !hasTop {
-			// Remove trailing semicolon for appending
 			q := strings.TrimSpace(query)
 			q = strings.TrimSuffix(q, ";")
 
 			if conn.Config.Type == "sqlserver" {
-				// SQL Server uses OFFSET/FETCH but requires ORDER BY
 				hasOrderBy := strings.Contains(trimmed, " ORDER BY ")
 				orderBy := ""
 				if !hasOrderBy {
@@ -422,8 +455,8 @@ func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, t
 		}
 	}
 
-	// If in manual mode with active transaction, use transaction
-	if transactionMode == "manual" && conn.Tx != nil {
+	// Se tiver transação ativa, executar nela (SELECT e DML)
+	if conn.Tx != nil {
 		if isSelect {
 			rows, err := conn.Tx.Query(query)
 			if err != nil {
@@ -434,6 +467,15 @@ func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, t
 			columns, err := rows.Columns()
 			if err != nil {
 				return nil, err
+			}
+
+			colTypes, err := rows.ColumnTypes()
+			var typeNames []string
+			if err == nil {
+				typeNames = make([]string, len(colTypes))
+				for i, ct := range colTypes {
+					typeNames[i] = ct.DatabaseTypeName()
+				}
 			}
 
 			var data [][]interface{}
@@ -455,10 +497,23 @@ func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, t
 			}
 
 			result := &types.QueryResult{
-				Columns:  columns,
-				Rows:     data,
-				RowCount: len(data),
-				Message:  fmt.Sprintf("%d rows returned", len(data)),
+				Columns:     columns,
+				ColumnTypes: typeNames,
+				Rows:        data,
+				RowCount:    len(data),
+				Message:     fmt.Sprintf("%d rows returned", len(data)),
+			}
+			result.Duration = time.Since(start).Milliseconds()
+			return result, nil
+		} else if isDML {
+			res, err := conn.Tx.Exec(query)
+			if err != nil {
+				return nil, err
+			}
+			affected, _ := res.RowsAffected()
+			result := &types.QueryResult{
+				RowCount: int(affected),
+				Message:  fmt.Sprintf("%d rows affected", affected),
 			}
 			result.Duration = time.Since(start).Milliseconds()
 			return result, nil
@@ -472,4 +527,33 @@ func (a *App) ExecuteQueryPaginated(connName, query string, offset, limit int, t
 
 	result.Duration = time.Since(start).Milliseconds()
 	return result, nil
+}
+
+// ExportProject retorna JSON de um projeto para exportacao.
+func (a *App) ExportProject(name string) (string, error) {
+	project, err := a.connMgr.GetProject(name)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := json.MarshalIndent(project, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("erro ao serializar projeto: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// ImportProject importa um projeto a partir de JSON.
+func (a *App) ImportProject(jsonData string) error {
+	var project types.Project
+	if err := json.Unmarshal([]byte(jsonData), &project); err != nil {
+		return fmt.Errorf("JSON invalido: %w", err)
+	}
+
+	if project.Name == "" {
+		return fmt.Errorf("projeto deve ter um nome")
+	}
+
+	return a.connMgr.SaveProject(project)
 }

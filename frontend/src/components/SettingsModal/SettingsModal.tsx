@@ -6,6 +6,7 @@ export interface AppSettings {
   autoExpandProject: boolean;
   confirmOnDelete: boolean;
   fontSize: number;
+  uiFontSize: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoExpandProject: false,
   confirmOnDelete: true,
   fontSize: 13,
+  uiFontSize: 12,
 };
 
 interface SettingsModalProps {
@@ -23,14 +25,22 @@ interface SettingsModalProps {
   onSave: (settings: AppSettings) => void;
 }
 
+type SettingsTab = 'editor' | 'interface';
+
 export default function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsModalProps) {
   const [local, setLocal] = useState<AppSettings>(settings);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
 
   useEffect(() => {
     setLocal(settings);
   }, [settings, isOpen]);
 
   if (!isOpen) return null;
+
+  const tabs: { key: SettingsTab; label: string }[] = [
+    { key: 'editor', label: 'Editor' },
+    { key: 'interface', label: 'Interface' },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
@@ -56,20 +66,35 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-app-border px-5">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-2.5 text-[0.917em] font-medium border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? 'border-accent-blue text-accent-blue'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Settings */}
-        <div className="px-5 py-4 space-y-5 max-h-[60vh] overflow-y-auto">
-          {/* Execucao de queries */}
-          <div>
-            <h3 className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider mb-3">Execucao de Queries</h3>
-            <div className="space-y-3">
+        <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+          {activeTab === 'editor' && (
+            <>
               <div>
-                <label className="block text-[11px] text-zinc-400 mb-1.5">Modo de execucao (Ctrl+Enter)</label>
+                <label className="block text-[0.917em] text-zinc-400 mb-1.5">Modo de execucao (Ctrl+Enter)</label>
                 <div className="flex gap-2">
                   {([['statement', 'Statement atual'], ['all', 'Arquivo inteiro']] as const).map(([val, label]) => (
                     <button
                       key={val}
                       onClick={() => setLocal({ ...local, executeMode: val })}
-                      className={`flex-1 h-8 px-3 rounded border text-[11px] font-medium transition-colors ${
+                      className={`flex-1 h-8 px-3 rounded border text-[0.917em] font-medium transition-colors ${
                         local.executeMode === val
                           ? 'bg-accent-blue/20 border-accent-blue text-accent-blue'
                           : 'bg-app-bg border-app-border text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'
@@ -82,13 +107,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
               </div>
 
               <div>
-                <label className="block text-[11px] text-zinc-400 mb-1.5">Delimitador de statement</label>
+                <label className="block text-[0.917em] text-zinc-400 mb-1.5">Delimitador de statement</label>
                 <div className="flex gap-2">
                   {([['blank_line', 'Linha em branco'], ['semicolon', 'Ponto e virgula']] as const).map(([val, label]) => (
                     <button
                       key={val}
                       onClick={() => setLocal({ ...local, statementDelimiter: val })}
-                      className={`flex-1 h-8 px-3 rounded border text-[11px] font-medium transition-colors ${
+                      className={`flex-1 h-8 px-3 rounded border text-[0.917em] font-medium transition-colors ${
                         local.statementDelimiter === val
                           ? 'bg-accent-blue/20 border-accent-blue text-accent-blue'
                           : 'bg-app-bg border-app-border text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'
@@ -98,21 +123,15 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
                     </button>
                   ))}
                 </div>
-                <p className="text-[9px] text-zinc-600 mt-1">
+                <p className="text-[0.75em] text-zinc-600 mt-1">
                   {local.statementDelimiter === 'blank_line'
                     ? 'Separa statements por linhas em branco (estilo DBeaver)'
                     : 'Separa statements por ponto e virgula'}
                 </p>
               </div>
-            </div>
-          </div>
 
-          {/* UI */}
-          <div>
-            <h3 className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider mb-3">Interface</h3>
-            <div className="space-y-3">
               <div>
-                <label className="block text-[11px] text-zinc-400 mb-1.5">Tamanho da fonte do editor</label>
+                <label className="block text-[0.917em] text-zinc-400 mb-1.5">Tamanho da fonte do editor</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
@@ -122,7 +141,26 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
                     onChange={(e) => setLocal({ ...local, fontSize: Number(e.target.value) })}
                     className="flex-1 accent-accent-blue"
                   />
-                  <span className="text-[11px] text-zinc-300 font-mono w-8 text-right">{local.fontSize}px</span>
+                  <span className="text-[0.917em] text-zinc-300 font-mono w-8 text-right">{local.fontSize}px</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'interface' && (
+            <>
+              <div>
+                <label className="block text-[0.917em] text-zinc-400 mb-1.5">Tamanho da fonte da interface</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="10"
+                    max="16"
+                    value={local.uiFontSize}
+                    onChange={(e) => setLocal({ ...local, uiFontSize: Number(e.target.value) })}
+                    className="flex-1 accent-accent-blue"
+                  />
+                  <span className="text-[0.917em] text-zinc-300 font-mono w-8 text-right">{local.uiFontSize}px</span>
                 </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -132,7 +170,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
                   onChange={(e) => setLocal({ ...local, autoExpandProject: e.target.checked })}
                   className="rounded border-zinc-600 bg-app-bg text-accent-blue focus:ring-accent-blue/50"
                 />
-                <span className="text-[11px] text-zinc-400">Expandir projetos automaticamente ao iniciar</span>
+                <span className="text-[0.917em] text-zinc-400">Expandir projetos automaticamente ao iniciar</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -141,23 +179,23 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
                   onChange={(e) => setLocal({ ...local, confirmOnDelete: e.target.checked })}
                   className="rounded border-zinc-600 bg-app-bg text-accent-blue focus:ring-accent-blue/50"
                 />
-                <span className="text-[11px] text-zinc-400">Confirmar antes de excluir conexoes/projetos</span>
+                <span className="text-[0.917em] text-zinc-400">Confirmar antes de excluir conexoes/projetos</span>
               </label>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-app-border flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="h-8 px-3 bg-app-bg hover:bg-app-elevated border border-app-border rounded text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="h-8 px-3 bg-app-bg hover:bg-app-elevated border border-app-border rounded text-[0.917em] text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={() => { onSave(local); onClose(); }}
-            className="h-8 px-4 bg-accent-blue hover:bg-accent-blue/80 rounded text-[11px] text-white font-medium transition-colors"
+            className="h-8 px-4 bg-accent-blue hover:bg-accent-blue/80 rounded text-[0.917em] text-white font-medium transition-colors"
           >
             Salvar
           </button>

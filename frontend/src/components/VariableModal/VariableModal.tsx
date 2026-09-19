@@ -42,7 +42,7 @@ export default function VariableModal({ isOpen, variables, onClose, onExecute }:
             </div>
             <div>
               <h2 className="text-sm font-semibold text-white">Variaveis SQL</h2>
-              <p className="text-[10px] text-zinc-500">Preencha os valores para executar</p>
+              <p className="text-[0.83em] text-zinc-500">Preencha os valores para executar</p>
             </div>
           </div>
           <button
@@ -58,7 +58,7 @@ export default function VariableModal({ isOpen, variables, onClose, onExecute }:
         <div className="px-5 py-4 space-y-3 max-h-[50vh] overflow-y-auto">
           {variables.map((v) => (
             <div key={v.name}>
-              <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+              <label className="block text-[0.917em] font-medium text-zinc-400 mb-1">
                 <span className="text-accent-blue font-mono">{`{${v.name}}`}</span>
               </label>
               <input
@@ -79,7 +79,7 @@ export default function VariableModal({ isOpen, variables, onClose, onExecute }:
                     <button
                       key={i}
                       onClick={() => setValues({ ...values, [v.name]: h })}
-                      className="px-2 py-0.5 bg-app-bg hover:bg-app-elevated rounded text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors font-mono"
+                      className="px-2 py-0.5 bg-app-bg hover:bg-app-elevated rounded text-[0.75em] text-zinc-500 hover:text-zinc-300 transition-colors font-mono"
                     >
                       {h}
                     </button>
@@ -93,13 +93,13 @@ export default function VariableModal({ isOpen, variables, onClose, onExecute }:
         <div className="px-5 py-3 border-t border-app-border flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="h-8 px-3 bg-app-bg hover:bg-app-elevated border border-app-border rounded text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="h-8 px-3 bg-app-bg hover:bg-app-elevated border border-app-border rounded text-[0.917em] text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={handleSubmit}
-            className="h-8 px-4 bg-accent-blue hover:bg-accent-blue/80 rounded text-[11px] text-white font-medium transition-colors"
+            className="h-8 px-4 bg-accent-blue hover:bg-accent-blue/80 rounded text-[0.917em] text-white font-medium transition-colors"
           >
             Executar
           </button>

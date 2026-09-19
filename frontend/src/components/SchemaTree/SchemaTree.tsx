@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronRight, ChevronDown, Database, Table, Columns, Key, Eye, Play, Zap, AlertTriangle } from 'lucide-react';
 import { GetDatabases, GetSchemas, GetTables, GetColumns, GetViews, GetProcedures, GetFunctions, GetTriggers } from '../../../wailsjs/go/main/App';
+import ContextMenu, { ContextMenuItem } from '../ContextMenu/ContextMenu';
 
 interface TreeNode {
   id: string;
@@ -14,13 +15,16 @@ interface TreeNode {
 interface SchemaTreeProps {
   connectionName: string;
   onTableSelect: (tableName: string) => void;
+  onOpenQuery?: (query: string) => void;
+  onShowDefinition?: (name: string, type: string) => void;
 }
 
-export default function SchemaTree({ connectionName, onTableSelect }: SchemaTreeProps) {
+export default function SchemaTree({ connectionName, onTableSelect, onOpenQuery, onShowDefinition }: SchemaTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<Set<string>>(new Set());
   const [tree, setTree] = useState<TreeNode[]>([]);
   const loadingRef = useRef<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode } | null>(null);
 
   useEffect(() => {
     setTree([]);
@@ -233,6 +237,44 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
     }
   };
 
+  const getContextMenuItems = (node: TreeNode): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+    const copyItem: ContextMenuItem = {
+      label: 'Copiar nome',
+      onClick: () => navigator.clipboard.writeText(node.name),
+    };
+
+    if (node.type === 'table') {
+      items.push(
+        { label: 'SELECT * FROM ' + node.name, onClick: () => onOpenQuery?.(`SELECT * FROM ${node.name}`) },
+        { label: 'INSERT INTO ' + node.name, onClick: () => onOpenQuery?.(`INSERT INTO ${node.name} () VALUES ()`) },
+        { label: 'ALTER TABLE ' + node.name, onClick: () => onOpenQuery?.(`ALTER TABLE ${node.name}`) },
+        { label: 'DROP TABLE ' + node.name, onClick: () => onOpenQuery?.(`DROP TABLE ${node.name}`) },
+        { separator: true },
+        copyItem,
+        { label: 'Ver DDL', onClick: () => onShowDefinition?.(node.name, 'table') },
+      );
+    } else if (node.type === 'view') {
+      items.push(
+        { label: 'SELECT * FROM ' + node.name, onClick: () => onOpenQuery?.(`SELECT * FROM ${node.name}`) },
+        { separator: true },
+        copyItem,
+        { label: 'Ver Definition', onClick: () => onShowDefinition?.(node.name, 'view') },
+      );
+    } else if (node.type === 'procedure' || node.type === 'function' || node.type === 'trigger') {
+      items.push(
+        copyItem,
+        { label: 'Ver Definition', onClick: () => onShowDefinition?.(node.name, node.type) },
+      );
+    } else if (node.type === 'column') {
+      items.push(copyItem);
+    } else if (node.type === 'database' || node.type === 'schema') {
+      items.push(copyItem);
+    }
+
+    return items;
+  };
+
   const renderNode = (node: TreeNode, level: number = 0) => {
     const isExpanded = expanded.has(node.id);
     const hasChildren = node.type !== 'column';
@@ -255,6 +297,11 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
             if (isTable) {
               onTableSelect(node.name);
             }
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setContextMenu({ x: e.clientX, y: e.clientY, node });
           }}
         >
           {hasChildren ? (
@@ -301,6 +348,14 @@ export default function SchemaTree({ connectionName, onTableSelect }: SchemaTree
   return (
     <div className="text-xs py-1">
       {tree.map((node) => renderNode(node))}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getContextMenuItems(contextMenu.node)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

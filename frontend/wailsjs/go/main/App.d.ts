@@ -22,7 +22,11 @@ export function ExecuteQueryUnlimited(arg1:string,arg2:string):Promise<types.Que
 
 export function ExportData(arg1:types.QueryResult,arg2:string,arg3:string):Promise<void>;
 
+export function ExportProject(arg1:string):Promise<string>;
+
 export function ExtractSQLVariables(arg1:string):Promise<Array<sqlvariables.Variable>>;
+
+export function ImportProject(arg1:string):Promise<void>;
 
 export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>;
 

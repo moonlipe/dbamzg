@@ -332,6 +332,15 @@ func (d *Driver) executeQuerySelect(dbConn *sql.DB, query string) (*types.QueryR
 		return nil, err
 	}
 
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	typeNames := make([]string, len(colTypes))
+	for i, ct := range colTypes {
+		typeNames[i] = ct.DatabaseTypeName()
+	}
+
 	var result [][]interface{}
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
@@ -355,10 +364,11 @@ func (d *Driver) executeQuerySelect(dbConn *sql.DB, query string) (*types.QueryR
 	}
 
 	return &types.QueryResult{
-		Columns:  columns,
-		Rows:     result,
-		RowCount: len(result),
-		Message:  fmt.Sprintf("%d rows returned", len(result)),
+		Columns:     columns,
+		ColumnTypes: typeNames,
+		Rows:        result,
+		RowCount:    len(result),
+		Message:     fmt.Sprintf("%d rows returned", len(result)),
 	}, nil
 }
 

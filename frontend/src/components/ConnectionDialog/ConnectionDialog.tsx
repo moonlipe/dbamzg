@@ -195,7 +195,7 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig, 
                   ) : t.iconPath ? (
                     <SimpleIcon path={t.iconPath} color={`#${t.iconColor}`} size={20} />
                   ) : null}
-                  <span className="text-[10px]">{t.label}</span>
+                  <span className="text-[0.83em]">{t.label}</span>
                 </button>
               ))}
             </div>
@@ -297,11 +297,11 @@ export default function ConnectionDialog({ isOpen, onClose, onSave, editConfig, 
           {/* Oracle Wallet */}
           {config.Type === 'oracle' && (
             <div className="p-3 bg-app-bg rounded border border-app-border">
-              <p className="text-[10px] text-zinc-500 mb-2">
+              <p className="text-[0.83em] text-zinc-500 mb-2">
                 Para Oracle Wallet, deixe Usuario e Senha em branco.
                 O sistema usara o wallet configurado no Oracle Instant Client.
               </p>
-              <p className="text-[10px] text-zinc-500">
+              <p className="text-[0.83em] text-zinc-500">
                 TNS_ADMIN deve estar configurado para o diretorio do wallet.
               </p>
             </div>

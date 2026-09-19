@@ -38,6 +38,14 @@ export function ExportData(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExportData'](arg1, arg2, arg3);
 }
 
+export function ExportProject(arg1) {
+  return window['go']['main']['App']['ExportProject'](arg1);
+}
+
+export function ImportProject(arg1) {
+  return window['go']['main']['App']['ImportProject'](arg1);
+}
+
 export function ExtractSQLVariables(arg1) {
   return window['go']['main']['App']['ExtractSQLVariables'](arg1);
 }

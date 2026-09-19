@@ -5,6 +5,7 @@ export interface SqlEditorHandle {
   getSelectedOrCurrentStatement: () => string;
   getFullText: () => string;
   setFullText: (text: string) => void;
+  focus: () => void;
 }
 
 interface SqlEditorProps {
@@ -12,11 +13,12 @@ interface SqlEditorProps {
   onChange: (value: string) => void;
   onExecute?: () => void;
   onExecuteAll?: () => void;
+  onSave?: () => void;
   language?: string;
 }
 
 const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor(
-  { value, onChange, onExecute, onExecuteAll, language = 'sql' },
+  { value, onChange, onExecute, onExecuteAll, onSave, language = 'sql' },
   ref
 ) {
   const editorRef = useRef<any>(null);
@@ -26,6 +28,8 @@ const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor
   onExecuteRef.current = onExecute;
   const onExecuteAllRef = useRef(onExecuteAll);
   onExecuteAllRef.current = onExecuteAll;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
 
   const getSelectedOrCurrentStatement = (): string => {
     const editor = editorRef.current;
@@ -62,6 +66,7 @@ const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor
     getSelectedOrCurrentStatement,
     getFullText: () => editorRef.current?.getModel()?.getValue() || '',
     setFullText: (text: string) => editorRef.current?.setValue(text),
+    focus: () => editorRef.current?.focus(),
   }));
 
   const handleMount: OnMount = (editor) => {
@@ -86,6 +91,17 @@ const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor
       ],
       run: () => {
         onExecuteAllRef.current?.();
+      },
+    });
+
+    editor.addAction({
+      id: 'save-query',
+      label: 'Save Query (Ctrl+S)',
+      keybindings: [
+        2048 | 49,
+      ],
+      run: () => {
+        onSaveRef.current?.();
       },
     });
 
@@ -135,7 +151,7 @@ const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function SqlEditor
           overviewRulerLanes: 0,
           hideCursorInOverviewRuler: true,
           overviewRulerBorder: false,
-          contextmenu: false,
+          contextmenu: true,
         }}
       />
     </div>

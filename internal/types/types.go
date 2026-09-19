@@ -113,11 +113,12 @@ type SavedQuery struct {
 
 // QueryResult armazena o resultado de uma query executada.
 type QueryResult struct {
-	Columns  []string        // Nomes das colunas
-	Rows     [][]interface{} // Dados das linhas
-	RowCount int             // Número de linhas afetadas/retornadas
-	Message  string          // Mensagem de retorno (ex: "5 rows affected")
-	Duration int64           // Duração da execução em milissegundos
+	Columns     []string        // Nomes das colunas
+	ColumnTypes []string        // Tipos das colunas
+	Rows        [][]interface{} // Dados das linhas
+	RowCount    int             // Número de linhas afetadas/retornadas
+	Message     string          // Mensagem de retorno (ex: "5 rows affected")
+	Duration    int64           // Duração da execução em milissegundos
 }
 
 // Driver é a interface que todos os drivers de banco devem implementar.
