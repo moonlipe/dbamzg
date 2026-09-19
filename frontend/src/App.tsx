@@ -114,6 +114,7 @@ function App() {
   const [connections, setConnections] = useState<types.ConnectionConfig[]>([]);
   const [projects, setProjects] = useState<types.Project[]>([]);
   const [activeConnection, setActiveConnection] = useState<string | null>(null);
+  const [schemaRefreshKey, setSchemaRefreshKey] = useState(0);
   const [tabs, setTabs] = useState<Tab[]>(() => [createTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1522,6 +1523,7 @@ function App() {
                             {activeConnection === conn.Name && (
                               <div className="pl-9 bg-app-bg/30 animate-fade-in">
                                 <SchemaTree
+                                  key={`${conn.Name}-${schemaRefreshKey}`}
                                   connectionName={conn.Name}
                                   onTableSelect={handleTableSelect}
                                   onOpenQuery={handleOpenQueryFromTree}
@@ -2170,6 +2172,14 @@ function App() {
                       showToast('Conexao testada com sucesso', 'success');
                     } catch (err) {
                       showToast(`Erro ao testar: ${err}`, 'error');
+                    }
+                  }},
+                  { label: 'Atualizar', onClick: () => {
+                    if (activeConnection === connContextMenu.conn.Name) {
+                      setSchemaRefreshKey((k) => k + 1);
+                      showToast('Esquema atualizado', 'success');
+                    } else {
+                      showToast('Conecte-se primeiro para atualizar', 'error');
                     }
                   }},
                   { separator: true },
