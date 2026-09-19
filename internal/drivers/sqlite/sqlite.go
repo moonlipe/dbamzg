@@ -239,6 +239,25 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 	return ddl, nil
 }
 
+func (d *Driver) GetDefinition(dbConn *sql.DB, objectType string, name string) (string, error) {
+	sqliteType := objectType
+	switch objectType {
+	case "view":
+		sqliteType = "view"
+	case "procedure", "function", "trigger":
+		sqliteType = objectType
+	default:
+		sqliteType = "table"
+	}
+	query := `SELECT sql FROM main.sqlite_master WHERE type=? AND name=?`
+	var ddl string
+	err := dbConn.QueryRow(query, sqliteType, name).Scan(&ddl)
+	if err != nil {
+		return "", fmt.Errorf("definition not found: %w", err)
+	}
+	return ddl, nil
+}
+
 // GetViews retorna as views de um schema.
 func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
 	log.Printf("[sqlite] Listando views...")

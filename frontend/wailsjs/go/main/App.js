@@ -54,6 +54,10 @@ export function GetDatabases(arg1) {
   return window['go']['main']['App']['GetDatabases'](arg1);
 }
 
+export function GetDefinition(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetDefinition'](arg1, arg2, arg3);
+}
+
 export function GetFunctions(arg1, arg2) {
   return window['go']['main']['App']['GetFunctions'](arg1, arg2);
 }

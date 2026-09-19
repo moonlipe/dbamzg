@@ -187,6 +187,16 @@ func (a *App) GetTriggers(connName, schema string) ([]types.Trigger, error) {
 	return conn.Driver.GetTriggers(conn.DB, schema)
 }
 
+// GetDefinition retorna a definicao (DDL/SQL) de qualquer objeto do banco
+func (a *App) GetDefinition(connName, objectType, name string) (string, error) {
+	conn, err := a.connMgr.GetConnection(connName)
+	if err != nil {
+		return "", err
+	}
+
+	return conn.Driver.GetDefinition(conn.DB, objectType, name)
+}
+
 // ExecuteQuery executa uma query
 func (a *App) ExecuteQuery(connName, query string, transactionMode string) (*types.QueryResult, error) {
 	conn, err := a.connMgr.GetConnection(connName)

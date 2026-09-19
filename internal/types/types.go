@@ -147,6 +147,9 @@ type Driver interface {
 	// GetDDL retorna o DDL (CREATE TABLE) de uma tabela
 	GetDDL(db *sql.DB, table string) (string, error)
 
+	// GetDefinition retorna a definicao (DDL/SQL) de qualquer objeto do banco
+	GetDefinition(db *sql.DB, objectType string, name string) (string, error)
+
 	// GetViews retorna as views de um schema
 	GetViews(db *sql.DB, schema string) ([]View, error)
 

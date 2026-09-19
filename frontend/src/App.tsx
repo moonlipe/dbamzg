@@ -22,6 +22,7 @@ import {
   ReplaceSQLVariables,
   ExportProject,
   ImportProject,
+  GetDefinition,
 } from '../wailsjs/go/main/App';
 import { types, sqlvariables } from '../wailsjs/go/models';
 import SchemaTree from './components/SchemaTree/SchemaTree';
@@ -649,14 +650,20 @@ function App() {
     setActiveTabId(newTab.id);
   };
 
-  const handleShowDefinition = (name: string, type: string) => {
+  const handleShowDefinition = async (name: string, type: string) => {
     const conn = activeTab.connection || activeConnection;
     if (!conn) return;
     const newTab = createTab(conn);
-    newTab.query = `-- Definition: ${name} (${type})`;
+    newTab.query = `-- Carregando definition: ${name} (${type})...`;
     newTab.title = name;
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
+    try {
+      const def = await GetDefinition(conn, type, name);
+      updateTab(newTab.id, { query: def || `-- Nenhuma definition encontrada para ${type} '${name}'` });
+    } catch (err) {
+      updateTab(newTab.id, { query: `-- Erro ao obter definition: ${err}` });
+    }
   };
 
   const handleEditConnection = (conn: types.ConnectionConfig) => {

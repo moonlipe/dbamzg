@@ -311,6 +311,28 @@ GROUP BY t.table_schema, t.table_name`
 	return ddl, nil
 }
 
+func (d *Driver) GetDefinition(dbConn *sql.DB, objectType string, name string) (string, error) {
+	var query string
+	switch objectType {
+	case "view":
+		query = `SELECT pg_get_viewdef(c.oid, true) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = $1 AND c.relkind = 'v'`
+	case "procedure":
+		query = `SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE p.proname = $1 AND p.prokind = 'p'`
+	case "function":
+		query = `SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE p.proname = $1 AND p.prokind = 'f'`
+	case "trigger":
+		query = `SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t WHERE t.tgname = $1 AND NOT t.tgisinternal`
+	default:
+		return d.GetDDL(dbConn, name)
+	}
+	var def string
+	err := dbConn.QueryRow(query, name).Scan(&def)
+	if err != nil {
+		return "", fmt.Errorf("definition not found: %w", err)
+	}
+	return def, nil
+}
+
 // GetViews retorna as views de um schema.
 func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
 	if schema == "" {

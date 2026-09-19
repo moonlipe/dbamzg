@@ -320,6 +320,49 @@ GROUP BY owner, table_name`
 	return ddl, nil
 }
 
+func (d *Driver) GetDefinition(dbConn *sql.DB, objectType string, name string) (string, error) {
+	owner := strings.ToUpper(d.getCurrentUser(dbConn))
+	switch objectType {
+	case "view":
+		query := `SELECT text FROM all_views WHERE owner = :1 AND view_name = :2`
+		var def string
+		err := dbConn.QueryRow(query, owner, strings.ToUpper(name)).Scan(&def)
+		if err != nil {
+			return "", fmt.Errorf("definition not found: %w", err)
+		}
+		return def, nil
+	case "procedure", "function":
+		query := `SELECT text FROM all_source WHERE owner = :1 AND name = :2 AND type = :3 ORDER BY line`
+		rows, err := dbConn.Query(query, owner, strings.ToUpper(name), strings.ToUpper(objectType))
+		if err != nil {
+			return "", fmt.Errorf("definition not found: %w", err)
+		}
+		defer rows.Close()
+		var def string
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				continue
+			}
+			def += line
+		}
+		if def == "" {
+			return "", fmt.Errorf("definition not found for %s '%s'", objectType, name)
+		}
+		return def, nil
+	case "trigger":
+		query := `SELECT trigger_body FROM all_triggers WHERE owner = :1 AND trigger_name = :2`
+		var def string
+		err := dbConn.QueryRow(query, owner, strings.ToUpper(name)).Scan(&def)
+		if err != nil {
+			return "", fmt.Errorf("definition not found: %w", err)
+		}
+		return def, nil
+	default:
+		return d.GetDDL(dbConn, name)
+	}
+}
+
 // GetViews retorna as views de um schema.
 func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
 	if schema == "" {

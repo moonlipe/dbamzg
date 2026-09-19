@@ -30,6 +30,8 @@ export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>
 
 export function GetDatabases(arg1:string):Promise<Array<string>>;
 
+export function GetDefinition(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function GetFunctions(arg1:string,arg2:string):Promise<Array<types.DBFunc>>;
 
 export function GetProcedures(arg1:string,arg2:string):Promise<Array<types.Procedure>>;

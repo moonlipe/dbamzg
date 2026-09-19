@@ -298,6 +298,13 @@ export default function SchemaTree({ connectionName, onTableSelect, onOpenQuery,
               onTableSelect(node.name);
             }
           }}
+          onDoubleClick={() => {
+            if (node.type === 'table') {
+              onShowDefinition?.(node.name, 'table');
+            } else if (node.type !== 'column' && node.type !== 'tables' && node.type !== 'views' && node.type !== 'procedures' && node.type !== 'functions' && node.type !== 'triggers' && node.type !== 'database' && node.type !== 'schema') {
+              onShowDefinition?.(node.name, node.type);
+            }
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();

@@ -339,6 +339,25 @@ func (d *Driver) GetDDL(dbConn *sql.DB, table string) (string, error) {
 	return ddl, nil
 }
 
+func (d *Driver) GetDefinition(dbConn *sql.DB, objectType string, name string) (string, error) {
+	var query string
+	switch objectType {
+	case "view", "procedure", "function", "trigger":
+		query = `SELECT OBJECT_DEFINITION(OBJECT_ID(@p1))`
+	default:
+		return d.GetDDL(dbConn, name)
+	}
+	var def sql.NullString
+	err := dbConn.QueryRow(query, name).Scan(&def)
+	if err != nil {
+		return "", fmt.Errorf("definition not found: %w", err)
+	}
+	if !def.Valid || def.String == "" {
+		return "", fmt.Errorf("definition not found for %s '%s'", objectType, name)
+	}
+	return def.String, nil
+}
+
 // GetViews retorna as views de um schema.
 func (d *Driver) GetViews(dbConn *sql.DB, schema string) ([]types.View, error) {
 	if schema == "" {
