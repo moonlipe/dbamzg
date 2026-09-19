@@ -42,10 +42,6 @@ export function ExportProject(arg1) {
   return window['go']['main']['App']['ExportProject'](arg1);
 }
 
-export function ImportProject(arg1) {
-  return window['go']['main']['App']['ImportProject'](arg1);
-}
-
 export function ExtractSQLVariables(arg1) {
   return window['go']['main']['App']['ExtractSQLVariables'](arg1);
 }
@@ -108,6 +104,10 @@ export function GetTriggers(arg1, arg2) {
 
 export function GetViews(arg1, arg2) {
   return window['go']['main']['App']['GetViews'](arg1, arg2);
+}
+
+export function ImportProject(arg1) {
+  return window['go']['main']['App']['ImportProject'](arg1);
 }
 
 export function RemoveConnection(arg1) {

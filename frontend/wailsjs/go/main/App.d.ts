@@ -26,8 +26,6 @@ export function ExportProject(arg1:string):Promise<string>;
 
 export function ExtractSQLVariables(arg1:string):Promise<Array<sqlvariables.Variable>>;
 
-export function ImportProject(arg1:string):Promise<void>;
-
 export function GetColumns(arg1:string,arg2:string):Promise<Array<types.Column>>;
 
 export function GetDatabases(arg1:string):Promise<Array<string>>;
@@ -57,6 +55,8 @@ export function GetTransactionMode(arg1:string):Promise<string>;
 export function GetTriggers(arg1:string,arg2:string):Promise<Array<types.Trigger>>;
 
 export function GetViews(arg1:string,arg2:string):Promise<Array<types.View>>;
+
+export function ImportProject(arg1:string):Promise<void>;
 
 export function RemoveConnection(arg1:string):Promise<void>;
 

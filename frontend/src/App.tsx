@@ -162,7 +162,9 @@ function App() {
   // --- Grid Feature States ---
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set());
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [lastSelectedCol, setLastSelectedCol] = useState<number | null>(null);
+  const [lastSelectedCell, setLastSelectedCell] = useState<CellPos | null>(null);
   const [editingCell, setEditingCell] = useState<CellPos | null>(null);
   const [editValue, setEditValue] = useState('');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -173,6 +175,7 @@ function App() {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
   const lastSelectedRow = useRef<number | null>(null);
   const savingRef = useRef(false);
 
@@ -186,10 +189,14 @@ function App() {
   const tabsRef = useRef(tabs);
   const activeConnectionRef = useRef(activeConnection);
   const activeTabIdRef = useRef(activeTabId);
+  const connectionsRef = useRef(connections);
+  const projectsRef = useRef(projects);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => { activeConnectionRef.current = activeConnection; }, [activeConnection]);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
+  useEffect(() => { connectionsRef.current = connections; }, [connections]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
 
   // Close saved queries dropdown on outside click
   useEffect(() => {
@@ -292,6 +299,24 @@ function App() {
     }
   };
 
+  const ensureConnection = async (connName: string): Promise<boolean> => {
+    if (activeConnectionRef.current === connName) return true;
+    const connObj = [...projectsRef.current.flatMap((p) => p.Connections || []), ...connectionsRef.current].find(
+      (c) => c.Name === connName
+    );
+    if (!connObj) return false;
+    try {
+      if (activeConnectionRef.current && activeConnectionRef.current !== connName) {
+        try { await Disconnect(activeConnectionRef.current); } catch (_) {}
+      }
+      await Connect(connObj);
+      setActiveConnection(connObj.Name);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const executeSQL = async (queryToRun: string, conn: string, targetId: string) => {
     try {
       const q = queryToRun.trim().toUpperCase();
@@ -343,6 +368,15 @@ function App() {
       return;
     }
 
+    if (conn !== activeConnectionRef.current) {
+      updateTab(targetId, { isLoading: true });
+      const ok = await ensureConnection(conn);
+      if (!ok) {
+        updateTab(targetId, { isLoading: false, error: `Nao foi possivel conectar a '${conn}'` });
+        return;
+      }
+    }
+
     let queryToRun = '';
     if (editorRef.current) {
       queryToRun = editorRef.current.getSelectedOrCurrentStatement();
@@ -379,6 +413,15 @@ function App() {
       return;
     }
 
+    if (conn !== activeConnectionRef.current) {
+      updateTab(targetId, { isLoading: true });
+      const ok = await ensureConnection(conn);
+      if (!ok) {
+        updateTab(targetId, { isLoading: false, error: `Nao foi possivel conectar a '${conn}'` });
+        return;
+      }
+    }
+
     let queryToRun = '';
     if (editorRef.current) {
       queryToRun = editorRef.current.getFullText();
@@ -406,7 +449,16 @@ function App() {
   const handleVariableExecute = async (values: Record<string, string>) => {
     if (!pendingQuery) return;
     const replaced = await ReplaceSQLVariables(pendingQuery.query, values);
-    await executeSQL(replaced, pendingQuery.conn, activeTabIdRef.current);
+    const conn = pendingQuery.conn;
+    if (conn && conn !== activeConnectionRef.current) {
+      const ok = await ensureConnection(conn);
+      if (!ok) {
+        showToast(`Nao foi possivel conectar a '${conn}'`, 'error');
+        setPendingQuery(null);
+        return;
+      }
+    }
+    await executeSQL(replaced, conn, activeTabIdRef.current);
     setPendingQuery(null);
     editorRef.current?.focus();
   };
@@ -561,8 +613,6 @@ function App() {
 
   // --- Infinite Scroll ---
 
-  const resultsContainerRef = useRef<HTMLDivElement>(null);
-
   const handleResultsScroll = () => {
     const container = resultsContainerRef.current;
     if (!container) return;
@@ -692,6 +742,7 @@ function App() {
       setSelectedRows(new Set([rowIdx]));
       setSelectedColumns(new Set());
     }
+    setSelectedCells(new Set());
     lastSelectedRow.current = rowIdx;
   };
 
@@ -701,10 +752,43 @@ function App() {
     setTimeout(() => editInputRef.current?.focus(), 0);
   };
 
-  const handleCellClick = (rowIdx: number, colIdx: number) => {
-    setFocusedCell({ rowIdx, colIdx });
-    setSelectedRows(new Set());
-    setSelectedColumns(new Set());
+  const handleCellClick = (rowIdx: number, colIdx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const cellKey = `${rowIdx}:${colIdx}`;
+
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedCells((prev) => {
+        const next = new Set(prev);
+        if (next.has(cellKey)) next.delete(cellKey);
+        else next.add(cellKey);
+        return next;
+      });
+      setSelectedRows(new Set());
+      setSelectedColumns(new Set());
+      setFocusedCell({ rowIdx, colIdx });
+      setLastSelectedCell({ rowIdx, colIdx });
+    } else if (e.shiftKey && lastSelectedCell) {
+      const minRow = Math.min(lastSelectedCell.rowIdx, rowIdx);
+      const maxRow = Math.max(lastSelectedCell.rowIdx, rowIdx);
+      const minCol = Math.min(lastSelectedCell.colIdx, colIdx);
+      const maxCol = Math.max(lastSelectedCell.colIdx, colIdx);
+      const next = new Set<string>();
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          next.add(`${r}:${c}`);
+        }
+      }
+      setSelectedCells(next);
+      setSelectedRows(new Set());
+      setSelectedColumns(new Set());
+      setFocusedCell({ rowIdx, colIdx });
+    } else {
+      setSelectedCells(new Set([cellKey]));
+      setSelectedRows(new Set());
+      setSelectedColumns(new Set());
+      setFocusedCell({ rowIdx, colIdx });
+      setLastSelectedCell({ rowIdx, colIdx });
+    }
   };
 
   const handleColumnClick = (colIdx: number, e: React.MouseEvent) => {
@@ -728,6 +812,7 @@ function App() {
       setSelectedColumns(new Set([colIdx]));
       setSelectedRows(new Set());
     }
+    setSelectedCells(new Set());
     setLastSelectedCol(colIdx);
   };
 
@@ -995,6 +1080,50 @@ function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
+
+      // Arrow keys → navigate cells (only when not editing and not in editor)
+      if (!ctrl && !e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).closest?.('.monaco-editor'))) return;
+
+        if (focusedCell && activeTab.result?.Rows) {
+          e.preventDefault();
+          const maxRow = activeTab.result.Rows.length - 1;
+          const maxCol = (activeTab.result.Columns?.length || 1) - 1;
+          let { rowIdx, colIdx } = focusedCell;
+
+          if (e.key === 'ArrowUp') rowIdx = Math.max(0, rowIdx - 1);
+          else if (e.key === 'ArrowDown') rowIdx = Math.min(maxRow, rowIdx + 1);
+          else if (e.key === 'ArrowLeft') colIdx = Math.max(0, colIdx - 1);
+          else if (e.key === 'ArrowRight') colIdx = Math.min(maxCol, colIdx + 1);
+
+          setFocusedCell({ rowIdx, colIdx });
+
+          if (e.shiftKey) {
+            const cellKey = `${rowIdx}:${colIdx}`;
+            setSelectedCells((prev) => {
+              const next = new Set(prev);
+              next.add(cellKey);
+              return next;
+            });
+          } else {
+            setSelectedCells(new Set([`${rowIdx}:${colIdx}`]));
+          }
+          setLastSelectedCell({ rowIdx, colIdx });
+
+          // Scroll cell into view
+          const cellEl = gridRef.current?.querySelector(`[data-cell="${rowIdx}:${colIdx}"]`);
+          cellEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        } else if (activeTab.result?.Rows?.length && activeTab.result.Columns?.length) {
+          // No focused cell yet — focus first cell
+          e.preventDefault();
+          setFocusedCell({ rowIdx: 0, colIdx: 0 });
+          setSelectedCells(new Set(['0:0']));
+          setLastSelectedCell({ rowIdx: 0, colIdx: 0 });
+        }
+        return;
+      }
+
       if (!ctrl) return;
 
       // Ctrl+Shift+C → special copy dialog
@@ -1011,7 +1140,30 @@ function App() {
         const sel = window.getSelection()?.toString();
         if (sel) return;
 
-        if (selectedColumns.size > 0 && activeTab.result) {
+        if (selectedCells.size > 0 && activeTab.result) {
+          e.preventDefault();
+          const rows = activeTab.result.Rows || [];
+          const lines: string[] = [];
+          const cellArray = Array.from(selectedCells).map((k) => { const [r, c] = k.split(':').map(Number); return { r, c }; });
+          const minRow = Math.min(...cellArray.map((c) => c.r));
+          const maxRow = Math.max(...cellArray.map((c) => c.r));
+          const minCol = Math.min(...cellArray.map((c) => c.c));
+          const maxCol = Math.max(...cellArray.map((c) => c.c));
+          for (let r = minRow; r <= maxRow; r++) {
+            const cells: string[] = [];
+            for (let c = minCol; c <= maxCol; c++) {
+              if (selectedCells.has(`${r}:${c}`)) {
+                const v = rows[r]?.[c];
+                cells.push(v === null ? 'NULL' : String(v));
+              } else {
+                cells.push('');
+              }
+            }
+            lines.push(cells.join('\t'));
+          }
+          copyToClipboard(lines.join('\n'));
+          showToast(`${selectedCells.size} celulas copiadas`, 'success');
+        } else if (selectedColumns.size > 0 && activeTab.result) {
           e.preventDefault();
           const cols = activeTab.result.Columns || [];
           const rows = activeTab.result.Rows || [];
@@ -1036,12 +1188,13 @@ function App() {
         if (activeTab.result?.Rows && activeTab.result.Rows.length > 0) {
           e.preventDefault();
           setSelectedRows(new Set(activeTab.result.Rows.map((_, i) => i)));
+          setSelectedCells(new Set());
         }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedRows, selectedColumns, focusedCell, activeTab.result]);
+  }, [selectedRows, selectedColumns, selectedCells, focusedCell, activeTab.result]);
 
   // --- Auto-detect table name from query ---
   useEffect(() => {
@@ -1689,7 +1842,7 @@ function App() {
 
           {/* Results */}
           <div
-            ref={resultsContainerRef}
+            ref={(el) => { gridRef.current = el; resultsContainerRef.current = el; }}
             className="flex-1 overflow-auto relative"
             onScroll={handleResultsScroll}
           >
@@ -1740,17 +1893,21 @@ function App() {
                           const isChanged = isCellChanged(rowIdx, cellIdx);
                           const isFocused = focusedCell?.rowIdx === rowIdx && focusedCell?.colIdx === cellIdx;
                           const isColSelected = selectedColumns.has(cellIdx);
+                          const isCellSelected = selectedCells.has(`${rowIdx}:${cellIdx}`);
 
                           return (
                             <td
                               key={cellIdx}
+                              data-cell={`${rowIdx}:${cellIdx}`}
                               className={`px-2.5 py-1 text-[0.917em] whitespace-nowrap cursor-default ${
                                 isChanged ? 'bg-yellow-500/10' : ''
                               } ${isFocused ? 'ring-1 ring-accent-blue/50 ring-inset' : ''} ${
-                                isColSelected && !isFocused ? 'bg-accent-blue/10' : ''
+                                isCellSelected ? 'bg-accent-blue/20' : ''
+                              } ${
+                                isColSelected && !isFocused && !isCellSelected ? 'bg-accent-blue/10' : ''
                               }`}
                               onDoubleClick={() => handleCellDoubleClick(rowIdx, cellIdx, cell)}
-                              onClick={(e) => { e.stopPropagation(); handleCellClick(rowIdx, cellIdx); }}
+                              onClick={(e) => handleCellClick(rowIdx, cellIdx, e)}
                               onContextMenu={(e) => handleContextMenu(e, rowIdx, cellIdx)}
                             >
                               {isEditing ? (
@@ -1856,12 +2013,44 @@ function App() {
             )}
 
             {/* Selection Toolbar */}
-            {(selectedRows.size > 0 || selectedColumns.size > 0) && activeTab.result && (
+            {(selectedRows.size > 0 || selectedColumns.size > 0 || selectedCells.size > 0) && activeTab.result && (
               <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-app-surface border border-app-border rounded-lg shadow-xl px-3 py-2 flex items-center gap-3 text-[0.917em] animate-fade-in">
                 {selectedRows.size > 0 && <span className="text-zinc-300 font-medium">{selectedRows.size} linhas</span>}
                 {selectedRows.size > 0 && selectedColumns.size > 0 && <div className="h-4 w-px bg-app-border" />}
                 {selectedColumns.size > 0 && <span className="text-zinc-300 font-medium">{selectedColumns.size} colunas</span>}
+                {(selectedRows.size > 0 || selectedColumns.size > 0) && selectedCells.size > 0 && <div className="h-4 w-px bg-app-border" />}
+                {selectedCells.size > 0 && <span className="text-zinc-300 font-medium">{selectedCells.size} celulas</span>}
                 <div className="h-4 w-px bg-app-border" />
+                {selectedCells.size > 0 && (
+                  <button
+                    onClick={() => {
+                      const rows = activeTab.result?.Rows || [];
+                      const cellArray = Array.from(selectedCells).map((k) => { const [r, c] = k.split(':').map(Number); return { r, c }; });
+                      const minCol = Math.min(...cellArray.map((c) => c.c));
+                      const maxCol = Math.max(...cellArray.map((c) => c.c));
+                      const minRow = Math.min(...cellArray.map((c) => c.r));
+                      const maxRow = Math.max(...cellArray.map((c) => c.r));
+                      const lines: string[] = [];
+                      for (let r = minRow; r <= maxRow; r++) {
+                        const cells: string[] = [];
+                        for (let c = minCol; c <= maxCol; c++) {
+                          if (selectedCells.has(`${r}:${c}`)) {
+                            const v = rows[r]?.[c];
+                            cells.push(v === null ? 'NULL' : String(v));
+                          } else {
+                            cells.push('');
+                          }
+                        }
+                        lines.push(cells.join('\t'));
+                      }
+                      copyToClipboard(lines.join('\n'));
+                      showToast(`${selectedCells.size} celulas copiadas`, 'success');
+                    }}
+                    className="px-2 py-1 bg-app-bg hover:bg-app-elevated text-zinc-300 hover:text-white rounded transition-colors"
+                  >
+                    Copiar celulas
+                  </button>
+                )}
                 {selectedRows.size > 0 && (
                   <button
                     onClick={handleCopySelectedRowsToolbar}
